@@ -1,0 +1,13 @@
+﻿예시 데이터 - 가상 CMM 출력 (실제 장비 파일 아님)
+Part,EX-BRKT-100,Rev,A
+Point,Feature,Nominal,Actual,Deviation,Unit
+1,LENGTH,100,100.12,0.12,mm
+2,WIDTH,40,40.13,0.13,mm
+3,THICK,5,5.02,0.02,mm
+4,HOLE_A_DIA,8,8.03,0.03,mm
+5,HOLE_B_DIA,8,7.98,-0.02,mm
+6,HOLE_PITCH,60,60.04,0.04,mm
+7,HOLE_HEIGHT,20,19.95,-0.05,mm
+8,RADIUS,5,5.1,0.1,mm
+10,SLOT_DEPTH,3,3.06,0.06,mm
+13,EXTRA_POINT,2.5,2.5,0,mm

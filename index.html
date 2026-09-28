@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>초도품 치수검사 판정 도구</title>
+  <meta name="description" content="도면 치수 기준표와 CMM·수기 측정결과를 항목번호로 맞춰 OK / NOK / 확인필요를 판정하고 도면 위에 표시하는 브라우저용 도구(1단계 시연판)">
+  <meta name="robots" content="noindex">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <a class="skip" href="#main">본문으로 건너뛰기</a>
+  <header class="site-header">
+    <div class="inner header-inner">
+      <a class="brand" href="#/cases">
+        <span class="brand-name">초도품 치수검사 판정</span>
+        <span class="brand-sub">치수 기준표 · CMM/수기 측정 · 도면 표시 · 일일점검 현황</span>
+      </a>
+      <nav class="nav" id="nav" aria-label="주 메뉴"></nav>
+    </div>
+  </header>
+
+  <div id="sampleBanner" class="sample-banner" hidden>예시 데이터를 보고 있습니다. 가상 부품·가상 도면·가상 협력사로 만든 시연용 값이며 실제 자료가 아닙니다.</div>
+  <div id="storeBanner" class="store-banner" hidden></div>
+
+  <main id="main" class="inner main" tabindex="-1"></main>
+
+  <footer class="site-footer">
+    <div class="inner">1단계 시연판 · 파일은 서버로 보내지 않고 이 브라우저 안에서만 읽고 저장합니다</div>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <dialog id="dialog" class="dialog">
+    <form method="dialog" class="dialog-body">
+      <h2 id="dialogTitle"></h2>
+      <div id="dialogContent"></div>
+      <div class="dialog-actions" id="dialogActions"></div>
+    </form>
+  </dialog>
+
+  <!-- 파일(file://)로 열어도 돌도록 module 이 아닌 일반 스크립트로 불러옵니다 -->
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script src="js/logic.js"></script>
+  <script src="js/sample-data.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
