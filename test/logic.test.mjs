@@ -569,4 +569,60 @@ console.log('폐쇄망 — 외부로 나가는 요청 코드 검사');
   test('기본 설정은 폐쇄망 모드 켬', () => assert.equal(L.emptyDb().settings.offline_mode, true));
 }
 
+console.log('AI 읽기 — OpenAI 호환 주소 설정(2026-09-29 오후 늦게)');
+{
+  const AI = require('../js/ai.js');
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const img = 'data:image/jpeg;base64,AAAA';
+  test('주소 비우면 OpenAI 기본', () => {
+    const r = AI.buildRequest({ offline: false, baseUrl: '', key: 'sk-x', model: '', prompt: 'p', dataUrl: img });
+    assert.equal(r.url, 'https://api.openai.com/v1/chat/completions');
+    const b = JSON.parse(r.init.body);
+    assert.equal(b.model, 'gpt-4o-mini'); assert.equal(r.init.headers.Authorization, 'Bearer sk-x');
+    assert.equal(b.messages[0].content[1].image_url.url, img); assert.equal(b.messages[0].content[0].text, 'p');
+  });
+  test('base URL 뒤에 /chat/completions 를 붙임(끝 / 여럿 정리)', () => {
+    assert.equal(AI.resolveEndpoint(' https://llm.example.local/v1// ').url, 'https://llm.example.local/v1/chat/completions');
+    assert.equal(AI.resolveEndpoint('https://x.example/api/v1/chat/completions').url, 'https://x.example/api/v1/chat/completions');
+    assert.equal(AI.resolveEndpoint('https://api.openai.com/v1/').isDefault, true);
+  });
+  test('다른 주소: 설정한 주소·모델로, 키 없으면 Authorization 없음', () => {
+    const r = AI.buildRequest({ offline: false, baseUrl: 'http://10.0.0.5:8000/v1', key: '', model: 'vision-model-a', prompt: 'p', dataUrl: img });
+    assert.equal(r.url, 'http://10.0.0.5:8000/v1/chat/completions');
+    assert.equal(JSON.parse(r.init.body).model, 'vision-model-a');
+    assert.equal('Authorization' in r.init.headers, false);
+    assert.equal(AI.resolveEndpoint('http://10.0.0.5:8000/v1').insecure, true);
+  });
+  test('다른 주소인데 모델 이름 없으면 거부(기본 모델을 엉뚱한 서비스에 보내지 않음)', () =>
+    assert.throws(() => AI.buildRequest({ offline: false, baseUrl: 'https://llm.example.local/v1', key: 'k', model: '', prompt: 'p', dataUrl: img }), /모델 이름/));
+  test('OpenAI 기본 주소는 키 필수', () =>
+    assert.throws(() => AI.buildRequest({ offline: false, baseUrl: '', key: '', model: '', prompt: 'p', dataUrl: img }), /API 키/));
+  test('잘못된 주소 거부(ftp·javascript·? 붙은 주소)', () => {
+    ['ftp://x/v1', 'javascript:alert(1)', 'llm.example/v1', 'https://x.example/v1?key=1'].forEach(u => assert.ok(AI.resolveEndpoint(u).error, u));
+  });
+  test('폐쇄망 모드(기본·undefined 포함)면 요청을 만들지 않음', () => {
+    [true, undefined, null, 'false'].forEach(off => assert.throws(() => AI.buildRequest({ offline: off, baseUrl: '', key: 'k', model: '', prompt: 'p', dataUrl: img }), /폐쇄망/));
+  });
+  {
+    let called = 0, err = null; const saved = globalThis.fetch; globalThis.fetch = () => { called++; return Promise.reject(new Error('x')); };
+    try { await AI.readPhoto({ offline: true, key: 'k', prompt: 'p', dataUrl: img }); } catch (e) { err = e; } finally { globalThis.fetch = saved; }
+    test('readPhoto 도 폐쇄망 모드에서 fetch 없이 거부', () => { assert.equal(called, 0); assert.match(String(err && err.message), /폐쇄망/); });
+  }
+  test('답 글자: 문자열·조각 배열 모두', () => {
+    assert.equal(AI.answerText({ choices: [{ message: { content: '[1]' } }] }), '[1]');
+    assert.equal(AI.answerText({ choices: [{ message: { content: [{ type: 'text', text: '[' }, { type: 'text', text: '1]' }] } }] }), '[1]');
+    assert.equal(AI.answerText({}), '');
+  });
+  test('기본 설정: AI 주소 비움(=OpenAI), 폐쇄망 켬', () => { const st = L.emptyDb().settings; assert.equal(st.ai_base_url, ''); assert.equal(st.offline_mode, true); });
+  test('index.html CSP: connect-src 는 https 만(암호화 안 된 http 전체 허용 금지)', () => {
+    const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+    const csp = /Content-Security-Policy" content="([^"]+)"/.exec(html)[1];
+    const cs = /connect-src ([^;]+)/.exec(csp)[1].trim().split(/\s+/);
+    assert.deepEqual(cs, ['https:']);
+  });
+}
+
 console.log(process.exitCode ? '\n실패 있음' : '\n전부 통과 ' + passed + '건');

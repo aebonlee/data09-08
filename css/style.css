@@ -265,3 +265,6 @@ table.lab-matrix td.lab-CHECK b { color: var(--check-ink); }
 table.lab-matrix td .flag { color: #7a1c14; font-weight: 600; }
 table.lab-matrix th[scope="row"] { background: #eef1f5; }
 .dialog:has(.table-wrap table) { width: min(1040px, calc(100vw - 32px)); }
+
+/* AI 주소 확인 문구 (2026-09-29 오후 늦게) */
+.note.error-text { color: var(--danger); }

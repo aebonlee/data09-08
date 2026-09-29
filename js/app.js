@@ -304,7 +304,13 @@
     b.className = 'net-badge' + (offline() ? '' : ' ai-on');
     b.textContent = offline()
       ? '폐쇄망 모드 · 이 화면은 어떤 데이터도 외부로 보내지 않습니다. 파일·사진은 이 PC 브라우저 안에서만 읽고 저장합니다.'
-      : 'AI 읽기 사용 가능 · 「AI 읽기」를 누를 때만 그 사진 한 장이 OpenAI 로 전송됩니다. 도면·사내 측정표 사진에는 쓰지 마십시오.';
+      : 'AI 읽기 사용 가능 · 「AI 읽기」를 누를 때만 그 사진 한 장이 「설정·데이터」에 적은 AI 주소(' + aiHost() + ')로 전송됩니다. 도면·사내 측정표 사진에는 쓰지 마십시오.';
+  }
+  // 지금 설정된 AI 주소의 호스트 이름(표시용)
+  function aiHost() {
+    var ep = QCAI.resolveEndpoint(db.settings.ai_base_url);
+    if (ep.error) return '주소 확인 필요';
+    var m = /^https?:\/\/([^\/]+)/i.exec(ep.url); return m ? m[1] : ep.url;
   }
   // AI 읽기 도구 묶음 — 폐쇄망 모드에서는 아무것도 그리지 않습니다(null).
   //   opts: { photo: fn → 사진, prompt: fn → 요청문, onRows: fn(rows) }
@@ -324,12 +330,12 @@
           class: 'btn', type: 'button', onclick: function (e) {
             var ph = opts.photo(); if (!ph) { toast('먼저 사진을 올리십시오.', true); return; }
             if (busy) return; busy = true; var btn = e.currentTarget; btn.textContent = 'AI 가 읽는 중…';
-            QCAI.readPhoto({ offline: db.settings.offline_mode, key: S.getKey(), model: db.settings.ai_model, prompt: opts.prompt(), dataUrl: ph.dataUrl })
+            QCAI.readPhoto({ offline: db.settings.offline_mode, baseUrl: db.settings.ai_base_url, key: S.getKey(), model: db.settings.ai_model, prompt: opts.prompt(), dataUrl: ph.dataUrl })
               .then(function (text) { answer(text); })
               .catch(function (err) { toast('AI 읽기 실패: ' + err.message, true); })
-              .then(function () { busy = false; btn.textContent = 'AI 읽기(내 API 키)'; });
+              .then(function () { busy = false; btn.textContent = 'AI 읽기(' + aiHost() + ')'; });
           }
-        }, 'AI 읽기(내 API 키)'),
+        }, 'AI 읽기(' + aiHost() + ')'),
         h('button', {
           class: 'btn', type: 'button', onclick: function () {
             var p = opts.prompt();
@@ -1512,16 +1518,34 @@
       h('label', { class: 'check-line' }, offChk, h('span', null, h('b', null, '폐쇄망 모드 (기본 켬)'), h('br'),
         h('span', { class: 'note' }, '켜 두면 이 화면은 어떤 데이터도 외부로 보내지 않습니다. 사진 「AI 읽기」 버튼도 숨겨집니다. 도면·사내 측정표를 다루는 과제 A 는 켠 채로 쓰십시오.'))));
     if (!offline()) {
-      var keyIn = h('input', { type: 'password', name: 'openai_key', value: S.getKey(), autocomplete: 'off', placeholder: 'sk-...' });
-      var modelIn = h('input', { type: 'text', name: 'ai_model', value: db.settings.ai_model || 'gpt-4o-mini' });
-      append(offCard, h('div', { class: 'alert warn' }, '폐쇄망 모드가 꺼져 있습니다. 「AI 읽기」를 누르면 그 사진 한 장과 요청문이 OpenAI 로 전송됩니다. 협력사 점검표(과제 B)처럼 보안 요구가 없는 사진에만 쓰십시오.'),
-        h('div', { class: 'form-grid' }, field('내 OpenAI API 키 (이 브라우저에만 저장)', keyIn), field('모델', modelIn)),
+      var keyIn = h('input', { type: 'password', name: 'openai_key', value: S.getKey(), autocomplete: 'off', placeholder: 'sk-... (키가 필요 없는 사내 서버면 비움)' });
+      var baseIn = h('input', { type: 'url', name: 'ai_base_url', value: db.settings.ai_base_url || '', autocomplete: 'off', placeholder: QCAI.DEFAULT_BASE + ' (비우면 OpenAI)' });
+      var modelIn = h('input', { type: 'text', name: 'ai_model', value: db.settings.ai_model || '', placeholder: QCAI.DEFAULT_MODEL });
+      var epNote = h('p', { class: 'note', id: 'aiEndpoint' });
+      var showEp = function () {
+        var ep = QCAI.resolveEndpoint(baseIn.value);
+        epNote.textContent = ep.error ? '주소 확인: ' + ep.error
+          : '보낼 곳: ' + ep.url + (ep.isDefault ? ' (OpenAI 기본)' : '') + (ep.insecure ? ' — http 주소는 암호화되지 않으니 사내망 서버에만 쓰십시오. index.html 의 보안 정책(connect-src)에 이 주소를 더해야 연결되고, https 로 연 화면(GitHub Pages 등)에서는 브라우저가 http 요청을 막습니다(README 「사내 웹서버에 올리기」).' : '');
+        epNote.className = 'note' + (ep.error ? ' error-text' : '');
+      };
+      baseIn.addEventListener('input', showEp); showEp();
+      append(offCard, h('div', { class: 'alert warn' }, '폐쇄망 모드가 꺼져 있습니다. 「AI 읽기」를 누르면 그 사진 한 장과 요청문이 아래 AI 주소로 전송됩니다. 협력사 점검표(과제 B)처럼 보안 요구가 없는 사진에만 쓰십시오. 어느 AI 서비스를 써도 되는지는 회사 보안 부서가 정합니다.'),
+        h('div', { class: 'form-grid' },
+          field('AI 주소 (OpenAI 호환, 비우면 OpenAI)', baseIn),
+          field('모델 이름', modelIn),
+          field('API 키 (이 브라우저에만 저장)', keyIn)),
+        epNote,
         h('div', { class: 'btn-row', style: 'margin-top:10px' }, h('button', {
           class: 'btn btn-small', type: 'button', onclick: function () {
-            S.setKey(keyIn.value.trim()); db.settings.ai_model = modelIn.value.trim() || 'gpt-4o-mini'; save(); toast('AI 설정을 저장했습니다.');
+            var ep = QCAI.resolveEndpoint(baseIn.value);
+            if (ep.error) { toast(ep.error, true); return; }
+            if (!ep.isDefault && !modelIn.value.trim()) { toast('다른 AI 주소를 쓸 때는 모델 이름을 적어 주십시오(서비스 안내에 있는 이름).', true); return; }
+            S.setKey(keyIn.value.trim()); db.settings.ai_base_url = baseIn.value.trim(); db.settings.ai_model = modelIn.value.trim() || QCAI.DEFAULT_MODEL;
+            save(); updateNetBadge(); toast('AI 설정을 저장했습니다.');
           }
         }, 'AI 설정 저장'), h('button', { class: 'btn btn-small', type: 'button', onclick: function () { S.setKey(''); keyIn.value = ''; toast('API 키를 지웠습니다.'); } }, '키 지우기')),
-        h('p', { class: 'note' }, '키는 엑셀 백업에 들어가지 않습니다. 공용 PC 에서는 쓰고 나서 「키 지우기」를 누르십시오.'));
+        h('p', { class: 'note' }, 'OpenAI 호환 주소를 제공하는 서비스나 사내 설치형 LLM 서버라면 그 기본 주소(base URL)·모델 이름·키를 적으면 됩니다(사진을 읽을 수 있는 모델이어야 합니다). 키는 엑셀 백업에 들어가지 않습니다. 공용 PC 에서는 쓰고 나서 「키 지우기」를 누르십시오.'),
+        h('p', { class: 'note' }, '보내기 전에: 협력사 점검표 사진에는 협력사명·점검자 이름·서명이 찍혀 있습니다. 필요 없는 부분(특히 서명)은 가리거나 잘라낸 사진으로 읽히십시오.'));
     }
     main.appendChild(offCard);
     main.appendChild(h('div', { class: 'card', id: 'offlineGuide' }, h('h2', null, '폐쇄망 사용법 (사내망·인터넷 없는 PC)'),
@@ -1532,7 +1556,10 @@
         h('li', null, '압축을 푼 폴더의 index.html 을 크롬·엣지로 엽니다(더블클릭). 주소창이 file:// 로 시작하면 정상입니다.'),
         h('li', null, '이 화면 「폐쇄망 모드」가 켜져 있는지 확인합니다(기본 켬). 화면 위 띠에 「이 화면은 어떤 데이터도 외부로 보내지 않습니다」가 보이면 됩니다.'),
         h('li', null, '도면·측정 데이터는 그 PC 의 브라우저 저장소(localStorage)와 내가 내려받은 파일(성적서 Excel·전체 백업)에만 남습니다. 다른 PC 로 옮길 때는 「엑셀로 전체 내보내기」 파일을 사내 경로로 옮기십시오.')),
-      h('p', { class: 'note' }, '확인 방법: 개발자 도구(F12) → 네트워크 탭을 연 채로 써 보시면 외부 요청이 없습니다. 코드에서 외부로 요청하는 곳은 폐쇄망 모드를 껐을 때의 「AI 읽기」(js/ai.js) 한 곳뿐이며, index.html 의 보안 정책(Content-Security-Policy)이 그 밖의 주소로 연결하는 것을 막습니다. 저장소 test/logic.test.mjs 의 「폐쇄망」 검사가 이를 확인합니다.'),
+      h('p', { class: 'note' }, '확인 방법: 개발자 도구(F12) → 네트워크 탭을 연 채로 써 보시면 외부 요청이 없습니다. 코드에서 외부로 요청하는 곳은 폐쇄망 모드를 껐을 때의 「AI 읽기」(js/ai.js) 한 곳뿐이며, 폐쇄망 모드에서는 요청을 만들지도 않습니다. index.html 의 보안 정책(Content-Security-Policy)은 암호화된 https 주소만 허용합니다 — 사내 웹서버에 올릴 때는 회사가 허용한 AI 주소 하나로 좁히거나 \'none\' 으로 막을 수 있습니다. 저장소 test/logic.test.mjs 의 「폐쇄망」 검사가 이를 확인합니다.'),
+      h('h3', null, '사내 웹서버에 올려 여러 명이 쓰기'),
+      h('p', null, '이 폴더는 서버 프로그램이 필요 없는 정적 파일 묶음이라, 사내 웹서버(IIS·nginx·Apache 등)의 웹 폴더에 그대로 복사하면 같은 주소로 여러 명이 열 수 있습니다. 순서와 설정은 저장소 README 의 「사내 웹서버에 올리기」에 적어 두었습니다.'),
+      h('p', { class: 'note' }, '주의: 지금은 데이터가 각자의 브라우저 저장소에 따로 남습니다. 같은 주소로 열어도 서로의 검사 건이 보이지 않습니다. 여럿이 같은 데이터를 보려면 사내 DB(PostgreSQL·Supabase) 연결이 필요하며, 이것은 다음 단계입니다. 그전까지는 「엑셀로 전체 내보내기 / 가져오기」로 주고받으십시오.'),
       h('p', { class: 'note' }, '브라우저 저장소는 브라우저 데이터 삭제·시크릿 창에서 지워질 수 있으니 검사를 마치면 성적서·백업 파일을 사내 경로에 저장해 두십시오.')));
 
     var tpls = db.templates;

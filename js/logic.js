@@ -1044,7 +1044,7 @@
     return {
       inspections: [], current: null,
       // offline_mode: 폐쇄망 모드(기본 켬) — 켜져 있으면 「AI 읽기」를 숨기고 어떤 요청도 밖으로 보내지 않습니다
-      settings: { match_by_name: true, round_before_judge: false, blank_unit_as_spec: true, offline_mode: true, ai_model: 'gpt-4o-mini' },
+      settings: { match_by_name: true, round_before_judge: false, blank_unit_as_spec: true, offline_mode: true, ai_base_url: '', ai_model: 'gpt-4o-mini' },
       templates: [],
       daily: { equipment: [], records: [], limits: [], repeat_days: '', grids: [], formal_run: 3 }
     };

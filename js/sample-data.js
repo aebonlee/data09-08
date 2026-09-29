@@ -165,7 +165,7 @@
     return {
       _sample: true,
       inspections: [insp], current: insp.id,
-      settings: { match_by_name: true, round_before_judge: false, blank_unit_as_spec: true, offline_mode: true, ai_model: 'gpt-4o-mini' },
+      settings: { match_by_name: true, round_before_judge: false, blank_unit_as_spec: true, offline_mode: true, ai_base_url: '', ai_model: 'gpt-4o-mini' },
       templates: [{ name: '예시 CMM 출력(가상)', kind: 'meas', cols: { no: 'Point', name: 'Feature', value: 'Actual', unit: 'Unit', nominal: 'Nominal' } }],
       daily: {
         equipment: EQUIP.map(function (e) { return { vendor: e[0], equip: e[1], order: e[2] }; }),
