@@ -128,6 +128,29 @@
     return out;
   }
 
+  // ── 과제 B 월간 점검표 격자 (2026-09-29 메일 양식 2종의 구조만 빌린 가상 기록) ──────────
+  // 가상 협력사 「예시협력사-라」, 설비A(CNC 공작기계)·설비B(호빙기), 보전자는 가명.
+  function sampleGrids() {
+    // ① CNC 월간: 9/12 에 찍은 사진. 6일(일)은 휴무, 9일 누락, 10일 유압 7.8 이탈, 2~4일 같은 기록 반복(형식적 기록 의심 1건), 8일 서명 없음
+    var P = { 1: ['6.1', '8.4'], 2: ['6.0', '8.3'], 3: ['6.0', '8.3'], 4: ['6.0', '8.3'], 5: ['6.2', '8.5'], 7: ['5.9', '8.2'], 8: ['6.1', '8.6'], 10: ['7.8', '8.0'], 11: ['6.0', '7.9'] };
+    var g1 = { id: 'SAMPLE-G1', template: 'cnc_monthly', vendor: '예시협력사-라', equip: '설비A', equip_no: 'EQ-A', dept: '가공', keeper: '',
+      month: '2026-09', photo_date: '2026-09-12', day_from: 1, day_to: 30, off_days: [6], ranges: {}, note: '', photo: '예시_설비A_점검표.jpg', photo_hash: '', cells: {} };
+    Object.keys(P).forEach(function (d) {
+      g1.cells['1|' + d + '|'] = P[d][0]; g1.cells['8|' + d + '|'] = P[d][1];
+      ['2', '3', '4', '5', '6', '7'].forEach(function (n) { g1.cells[n + '|' + d + '|'] = '✓'; });
+      if (d !== '8') g1.cells['9|' + d + '|'] = '✓';
+    });
+    // ② 호빙기 1~16일 × 日/中: 9/5 에 찍은 사진. 3일 中 누락, 2일 中 시스템 압력 5.5 이탈, 4일 日 11번(배관 누유) ×
+    var g2 = { id: 'SAMPLE-G2', template: 'hob_daily', vendor: '예시협력사-라', equip: '설비B', equip_no: 'EQ-B', dept: '생산', keeper: '보전자A',
+      month: '2026-09', photo_date: '2026-09-05', day_from: 1, day_to: 16, off_days: [], ranges: {}, note: '4일 주간 — 오일 배관 이음부 누유, 조임 후 재확인(가상)', photo: '예시_설비B_점검표.jpg', photo_hash: '', cells: {} };
+    var PR = { '1|日': '4.5', '1|中': '4.4', '2|日': '4.6', '2|中': '5.5', '3|日': '4.5', '4|日': '4.3', '4|中': '4.5' };
+    Object.keys(PR).forEach(function (k) {
+      var d = k.split('|')[0], sh = k.split('|')[1];
+      for (var n = 1; n <= 13; n++) g2.cells[n + '|' + d + '|' + sh] = n === 9 ? PR[k] : (k === '4|日' && n === 11 ? '×' : '✓');
+    });
+    return [g1, g2];
+  }
+
   function build() {
     var spec = SPEC.map(function (r) { return { no: r[0], name: r[1], type: r[2], nominal: r[3], tol_upper: r[4], tol_lower: r[5], unit: r[6], decimals: r[7] }; });
     var meas = CMM_ROWS.slice(3).map(function (r) { return { no: String(r[0]), name: r[1], value: r[3], unit: r[5], source: 'CMM', nominal: r[2] }; })
@@ -148,12 +171,14 @@
         equipment: EQUIP.map(function (e) { return { vendor: e[0], equip: e[1], order: e[2] }; }),
         records: dailyRecords(),
         limits: LIMITS.map(function (l) { return { item: l[0], lower: l[1], upper: l[2] }; }),
-        repeat_days: 5
+        repeat_days: 5,
+        grids: sampleGrids(),
+        formal_run: 3
       }
     };
   }
 
-  var api = { build: build, drawingSvg: drawingSvg, SPEC: SPEC, CMM_ROWS: CMM_ROWS, CMM_NONUM: CMM_NONUM, MANUAL: MANUAL, EQUIP: EQUIP, LIMITS: LIMITS, dailyRecords: dailyRecords };
+  var api = { build: build, drawingSvg: drawingSvg, SPEC: SPEC, CMM_ROWS: CMM_ROWS, CMM_NONUM: CMM_NONUM, MANUAL: MANUAL, EQUIP: EQUIP, LIMITS: LIMITS, dailyRecords: dailyRecords, sampleGrids: sampleGrids };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.QCSample = api;
 })(typeof window !== 'undefined' ? window : this);

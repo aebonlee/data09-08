@@ -724,9 +724,224 @@
     return out;
   }
 
+  // ── 과제 B: 월간 점검표 격자 (2026-09-29 메일 샘플 반영) ─────────────────
+  // 협력사 점검표는 「사진 한 장 = 한 설비 한 달」 격자입니다(날짜 1~31 × 점검항목, 교대가 있으면 × 교대).
+  // 양식 정의는 받은 중국어 양식 2종의 구조만 옮긴 것입니다(회사명·양식번호·설비번호·이름은 넣지 않음).
+  // kind: check = ✓/× 표시, num = 숫자 기입(관리 범위), sign = 서명 칸(이름은 옮기지 않고 「있음」만 ✓)
+  var SHEET_TEMPLATES = [
+    {
+      id: 'cnc_monthly', zh: '数控机床点检表', ko: 'CNC 공작기계 점검표 (월간, 날짜별 1칸)',
+      shifts: [], day_from: 1, day_to: 31, sign: 'row',
+      rows_note: '양식에는 날짜가 1~16 / 17~말일 두 줄로 인쇄돼 있습니다. 여기서는 1~31 한 줄로 펼쳐 입력합니다.',
+      items: [
+        { no: '1', kind: 'num', lower: 5, upper: 7, unit: 'MPa', zh: '检查油压力为多少，请填写数值（正常为5-7MPa）', ko: '유압 압력 확인 — 수치 기입 (정상 5~7MPa)' },
+        { no: '2', kind: 'check', zh: '检查润滑油位、液压油位是否正常', ko: '윤활유·작동유 유위 정상 여부' },
+        { no: '3', kind: 'check', zh: '检查加工程序和加工产品是否一致', ko: '가공 프로그램과 가공 제품 일치 여부' },
+        { no: '4', kind: 'check', zh: '检查机床面板灯、按键、机床照明灯是否正常', ko: '조작반 램프·버튼·기계 조명등 정상 여부' },
+        { no: '5', kind: 'check', zh: '检查加工刀具、工装是否正常', ko: '가공 공구·지그 정상 여부' },
+        { no: '6', kind: 'check', zh: '检查排屑机工作是否正常', ko: '칩 컨베이어 작동 정상 여부' },
+        { no: '7', kind: 'check', zh: '检查有无漏气、漏油、漏水现象，冷却风扇是否正常', ko: '공기·오일·물 누설 유무, 냉각팬 정상 여부 (현장에서는 「无(없음)」으로 적음 → ✓ 로 입력)' },
+        { no: '8', kind: 'num', lower: 7, upper: 12, unit: '%', zh: '检查冷却液浓度，用折光仪查看并填写数值（正常为7%-12%）', ko: '절삭유 농도 — 굴절계로 보고 수치 기입 (정상 7~12%)' },
+        { no: '9', kind: 'sign', zh: '操作者签名（每天开机后第一件事情必须先按以上面项目点检机床）', ko: '작업자 서명 (매일 가동 후 가장 먼저 위 항목을 점검)' }
+      ]
+    },
+    {
+      id: 'hob_daily', zh: '设备日常点检项目表（数控滚齿机）', ko: '설비 일상점검 항목표 — CNC 호빙기 (날짜 × 日/中 교대)',
+      shifts: ['日', '中'], day_from: 1, day_to: 16, sign: 'header',
+      rows_note: '받은 사진은 1~16일만 인쇄된 장이었습니다. 17일~말일 장이 따로 있으면 「이 장이 덮는 날」을 17 ~ 31 로 바꾸십시오. 日/中 은 교대(주간/중간)로 보았습니다(확인 필요).',
+      items: [
+        { no: '1', kind: 'check', zh: '上下班对设备内外保持清洁整理。', ko: '출·퇴근 시 설비 안팎 청소·정리' },
+        { no: '2', kind: 'check', zh: '开启总电源时因注意周围情况。', ko: '주전원을 켤 때 주변 상황 주의' },
+        { no: '3', kind: 'check', zh: '各轴回零点时，注意观察越位碰撞，随时急停', ko: '각 축 원점 복귀 시 오버트래블·충돌 관찰, 필요하면 즉시 비상정지' },
+        { no: '4', kind: 'check', zh: '特别注意对裸露导轨、工作台面磕碰保护。', ko: '노출된 가이드레일·테이블 면 충돌 보호' },
+        { no: '5', kind: 'check', zh: '安全装置是否完好。', ko: '안전장치 이상 유무' },
+        { no: '6', kind: 'check', zh: '开启前对刀具、夹具是否紧固可靠。', ko: '가동 전 공구·지그 체결 상태' },
+        { no: '7', kind: 'check', zh: '开机后，听机械传动是否有异常。', ko: '가동 후 기계 구동부 이상음 확인' },
+        { no: '8', kind: 'check', zh: '注意液压油、润滑油、蜗轮副、油量充足。', ko: '작동유·윤활유·웜기어 유량 충분 여부' },
+        { no: '9', kind: 'num', lower: 4, upper: 5, unit: 'MPa', zh: '总系统压力4～5MPa，可对照机床压力表。', ko: '시스템 총압력 4~5MPa (기계 압력계로 확인)' },
+        { no: '10', kind: 'check', zh: '立柱负荷、工件夹紧、平衡油缸、随产品需要。', ko: '컬럼 부하·공작물 클램프·밸런스 실린더 (제품에 따라)' },
+        { no: '11', kind: 'check', zh: '注意油管接头、油箱泄漏检查。', ko: '오일 배관 이음부·오일탱크 누유 점검' },
+        { no: '12', kind: 'check', zh: '注意油位、油的清洁情况。', ko: '유위·오일 청정 상태' },
+        { no: '13', kind: 'check', zh: '检查刀架润滑的流量及回油情况。', ko: '공구대 윤활 유량·회유 상태' }
+      ]
+    }
+  ];
+  function sheetTemplate(id) { return SHEET_TEMPLATES.filter(function (t) { return t.id === id; })[0] || null; }
+
+  // 칸 입력값 정리. 사진에 보이는 그대로 적으면 됩니다: ✓ √ v o ○ → ✓ / × x X NG → × / 无·무·없음(누설 없음) → ✓ / 有·있음 → ×
+  var MARK_OK = ['✓', '√', '✔', 'V', 'O', '○', 'ㅇ', 'OK', '1', '无', '無', '무', '없음'];
+  var MARK_NG = ['×', 'X', '✗', '✕', 'NG', '有', '유', '있음', '이상', '불량'];
+  function normMark(v, kind) {
+    var s = v == null ? '' : String(v).trim();
+    if (!s) return '';
+    if (kind === 'sign') return '✓';                                  // 서명 칸: 이름은 옮기지 않고 「있음」만
+    if (kind === 'num') {
+      var t = s.replace(/\s*(mpa|%|bar)\s*$/i, '');
+      return parseNum(t) == null ? s : t;                              // 적힌 그대로(6.0 은 6.0), 단위만 뗌
+    }
+    var u = s.toUpperCase();
+    if (MARK_OK.indexOf(u) >= 0) return '✓';
+    if (MARK_NG.indexOf(u) >= 0) return '×';
+    return s;
+  }
+  function cellKey(no, day, shift) { return String(no) + '|' + Number(day) + '|' + (shift || ''); }
+  function daysInMonth(ym) {
+    var m = String(ym || '').match(/^(\d{4})-(\d{1,2})/);
+    if (!m) return 31;
+    return new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).getUTCDate();
+  }
+  // 이 장에서 볼 칸 목록(날짜 × 교대)
+  function gridSlots(grid, tpl) {
+    var from = Math.max(1, parseInt(grid.day_from, 10) || tpl.day_from);
+    var to = Math.min(daysInMonth(grid.month), parseInt(grid.day_to, 10) || tpl.day_to);
+    var shifts = tpl.shifts.length ? tpl.shifts : [''];
+    var out = [];
+    for (var d = from; d <= to; d++) shifts.forEach(function (s) { out.push({ day: d, shift: s }); });
+    return out;
+  }
+  function itemRange(grid, it) {
+    var o = (grid.ranges || {})[it.no] || {};
+    var lo = parseNum(o.lower), hi = parseNum(o.upper);
+    return { lower: lo != null ? lo : (it.lower == null ? null : it.lower), upper: hi != null ? hi : (it.upper == null ? null : it.upper) };
+  }
+  // 사진 찍은 날 기준 「이미 지난 날」의 마지막 날짜. 사진 찍은 날 자체는 점검이 진행 중일 수 있어 누락으로 세지 않습니다.
+  function gridCutoff(grid) {
+    var p = toDateStr(grid.photo_date), ym = String(grid.month || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(p) || !/^\d{4}-\d{2}$/.test(ym)) return { before: 0, photoDay: 0 };
+    var pm = p.slice(0, 7);
+    if (pm > ym) return { before: 99, photoDay: 0 };
+    if (pm < ym) return { before: 0, photoDay: 0 };
+    var d = Number(p.slice(8, 10));
+    return { before: d - 1, photoDay: d };
+  }
+
+  var GRID_KIND = {
+    out_of_range: { level: 'NOK', label: '관리 범위 이탈' },
+    invalid_value: { level: 'CHECK', label: '숫자로 읽을 수 없음' },
+    abnormal: { level: 'NOK', label: '× 이상 표시' },
+    invalid_mark: { level: 'CHECK', label: '알 수 없는 표시(✓·× 가 아님)' },
+    missed_day: { level: 'NOK', label: '점검 누락(칸 전체 빈칸)' },
+    blank_cell: { level: 'CHECK', label: '일부 항목 빈칸' },
+    missing_sign: { level: 'NOK', label: '서명·보전자 없음' },
+    after_photo: { level: 'CHECK', label: '사진 찍은 날 뒤의 날짜에 기록 있음(미리 적은 기록 의심)' },
+    formal_suspect: { level: 'CHECK', label: '형식적 기록 의심 — 확인 필요(경고일 뿐 부정으로 판정하지 않음)' }
+  };
+  function slotLabel(s) { return s.day + '일' + (s.shift ? ' ' + s.shift : ''); }
+
+  // 격자 규칙 검사. opts: { formal_run: 같은 기록이 몇 칸 연속이면 경고(기본 3, 0 이면 끔) }
+  // 반환: [{ day, shift, no, item, value, kind, level, label, detail }]
+  function gridChecks(grid, opts) {
+    opts = opts || {};
+    var tpl = sheetTemplate(grid.template);
+    if (!tpl) return [];
+    var cells = grid.cells || {};
+    var off = {}; (grid.off_days || []).forEach(function (d) { off[Number(d)] = true; });
+    var cut = gridCutoff(grid);
+    var body = tpl.items.filter(function (it) { return it.kind !== 'sign'; });
+    var signItem = tpl.items.filter(function (it) { return it.kind === 'sign'; })[0];
+    var out = [];
+    function add(s, it, kind, detail, value) {
+      out.push({ day: s ? s.day : '', shift: s ? s.shift : '', no: it ? it.no : '', item: it ? it.ko : '', value: value == null ? '' : value,
+        kind: kind, level: GRID_KIND[kind].level, label: GRID_KIND[kind].label, detail: detail || '' });
+    }
+    if (tpl.sign === 'header' && !String(grid.keeper || '').trim()) add(null, null, 'missing_sign', '머리칸 보전인(保养人) 빈칸');
+    var slots = gridSlots(grid, tpl);
+    var prevVec = null, run = 0;
+    var formalN = opts.formal_run === '' || opts.formal_run == null ? 3 : parseNum(opts.formal_run);
+    slots.forEach(function (s) {
+      var vals = body.map(function (it) { return normMark(cells[cellKey(it.no, s.day, s.shift)], it.kind); });
+      var filled = vals.filter(Boolean).length;
+      var signed = signItem ? !!normMark(cells[cellKey(signItem.no, s.day, s.shift)], 'sign') : true;
+      if (filled && s.day > cut.photoDay && cut.photoDay) add(s, null, 'after_photo', slotLabel(s));
+      if (!filled) {
+        if (s.day <= cut.before && !off[s.day]) add(s, null, 'missed_day', slotLabel(s) + ' — 휴무면 그날을 「휴무」로 표시하십시오');
+        prevVec = null; run = 0;
+        return;
+      }
+      body.forEach(function (it, i) {
+        var v = vals[i];
+        if (!v) { add(s, it, 'blank_cell', slotLabel(s)); return; }
+        if (it.kind === 'num') {
+          var n = parseNum(v);
+          if (n == null) { add(s, it, 'invalid_value', v, v); return; }
+          var r = itemRange(grid, it);
+          if (r.upper != null && n > r.upper) add(s, it, 'out_of_range', n + ' > 상한 ' + r.upper + (it.unit || ''), v);
+          else if (r.lower != null && n < r.lower) add(s, it, 'out_of_range', n + ' < 하한 ' + r.lower + (it.unit || ''), v);
+        } else if (v === '×') add(s, it, 'abnormal', slotLabel(s), v);
+        else if (v !== '✓') add(s, it, 'invalid_mark', v, v);
+      });
+      if (signItem && !signed) add(s, signItem, 'missing_sign', slotLabel(s) + ' 서명 칸 빈칸');
+      // 형식적 기록 의심: 모든 항목이 채워지고 ✓ 뿐이며, 숫자까지 앞 칸들과 똑같은 기록이 formalN 칸 이상 이어짐
+      var hasNum = body.some(function (it) { return it.kind === 'num'; });
+      var clean = filled === body.length && body.every(function (it, i) { return it.kind === 'num' ? parseNum(vals[i]) != null : vals[i] === '✓'; });
+      var vec = clean && hasNum ? body.map(function (it, i) { return it.kind === 'num' ? String(parseNum(vals[i])) : vals[i]; }).join('|') : null;
+      run = vec && vec === prevVec ? run + 1 : (vec ? 1 : 0);
+      prevVec = vec;
+      if (formalN && formalN >= 2 && run >= formalN) {
+        add(s, null, 'formal_suspect', run + '칸 연속 모든 항목 ✓ + 숫자 ' + body.filter(function (it) { return it.kind === 'num'; }).map(function (it) { return vals[body.indexOf(it)] + (it.unit || ''); }).join(' · ') + ' 똑같음');
+      }
+    });
+    return out;
+  }
+  function gridSummary(checks) {
+    var c = { NOK: 0, CHECK: 0, missed: 0 };
+    (checks || []).forEach(function (x) { c[x.level]++; if (x.kind === 'missed_day') c.missed++; });
+    return c;
+  }
+  function newGrid(info, now) {
+    now = now || new Date();
+    seq++;
+    var tpl = sheetTemplate(info.template) || SHEET_TEMPLATES[0];
+    var ym = /^\d{4}-\d{2}$/.test(String(info.month || '')) ? info.month : toDateStr(now).slice(0, 7);
+    return {
+      id: 'G' + now.getTime().toString(36) + seq, template: tpl.id, vendor: info.vendor || '', equip: info.equip || '',
+      equip_no: '', dept: '', keeper: '', month: ym, photo_date: info.photo_date || toDateStr(now),
+      day_from: tpl.day_from, day_to: Math.min(tpl.day_to, daysInMonth(ym)), off_days: [], cells: {}, ranges: {}, note: '', photo: '', photo_hash: ''
+    };
+  }
+
+  // AI 읽기 요청문 — 격자 전체를 JSON 으로. 중국어 양식을 그대로 읽게 하고, 이름은 옮기지 않게 합니다.
+  function aiPromptGrid(grid) {
+    var tpl = sheetTemplate(grid.template);
+    if (!tpl) return '';
+    var shiftTxt = tpl.shifts.length ? '날짜마다 교대 칸 ' + tpl.shifts.join('·') + ' 이 있어. shift 에 그 글자를 그대로 넣어 줘.' : '교대 칸은 없어. shift 는 빈 글자("")로 둬 줘.';
+    return [
+      '첨부한 사진은 설비 일일점검표(월간 격자)야. 양식이 중국어로 적혀 있어도 읽을 수 있어 — 점검항목은 아래 번호로 맞춰 줘.',
+      '양식: ' + tpl.zh + ' (' + tpl.ko + ')',
+      '가로는 날짜(' + (grid.day_from || tpl.day_from) + '~' + (grid.day_to || tpl.day_to) + '일), 세로는 점검항목이야. ' + shiftTxt,
+      '규칙:',
+      '1. 답은 JSON 객체 하나만 보내 줘. 설명 문장은 붙이지 말아 줘.',
+      '2. 형식: {"cells": [{"item": "항목 번호", "day": 날짜숫자, "shift": "교대", "mark": "칸 내용", "unsure": true/false}], "abnormal_note": "异常情况记录 칸에 적힌 내용(없으면 빈칸)"}',
+      '3. mark: 체크(√ ✓)는 "✓", ×는 "×", 无(없음)는 "无", 숫자는 적힌 그대로(단위 빼고). 빈칸은 넣지 말아 줘.',
+      '4. 서명 칸은 이름을 옮기지 말고 서명이 있으면 "✓" 만 넣어 줘. 사람 이름·회사 이름은 어디에도 적지 말아 줘.',
+      '5. 흐리거나 확실하지 않은 칸은 "unsure": true 로 표시해 줘. 추정해서 채우지 말아 줘.',
+      '점검항목 번호표:',
+      tpl.items.map(function (it) { return '- ' + it.no + ': ' + it.zh + ' / ' + it.ko + (it.kind === 'num' ? ' [숫자]' : it.kind === 'sign' ? ' [서명]' : ' [체크]'); }).join('\n')
+    ].join('\n');
+  }
+  // AI 답(parseAiJson 의 rows = cells) → 격자에 채움. 반환: { filled, skipped, unsure: [칸 키] }
+  function applyAiCells(grid, rows) {
+    var tpl = sheetTemplate(grid.template);
+    var res = { filled: 0, skipped: 0, unsure: [] };
+    if (!tpl) return res;
+    grid.cells = grid.cells || {};
+    var slots = {}; gridSlots(grid, tpl).forEach(function (s) { slots[s.day + '|' + s.shift] = true; });
+    (rows || []).forEach(function (r) {
+      var it = tpl.items.filter(function (x) { return normKey(x.no) === normKey(r.item); })[0];
+      var day = parseInt(r.day, 10), shift = tpl.shifts.length ? String(r.shift || '').trim() : '';
+      var v = normMark(r.mark != null ? r.mark : r.value, it ? it.kind : 'check');
+      if (!it || !slots[day + '|' + shift] || !v) { res.skipped++; return; }
+      var k = cellKey(it.no, day, shift);
+      grid.cells[k] = v; res.filled++;
+      if (r.unsure) res.unsure.push(k);
+    });
+    return res;
+  }
+
   // ── 백업(엑셀 시트) ─────────────────────────────────────────
   var INSP_FIELDS = ['id', 'part_no', 'rev', 'lot', 'insp_date', 'vendor', 'inspector', 'drawing_name'];
   var SPEC_COLS = ['no', 'name', 'type', 'nominal', 'tol_upper', 'tol_lower', 'unit', 'decimals'];
+  var GRID_COLS = ['id', 'template', 'vendor', 'equip', 'equip_no', 'dept', 'keeper', 'month', 'photo_date', 'day_from', 'day_to', 'off_days', 'ranges', 'note', 'photo', 'photo_hash'];
   var MEAS_COLS = ['no', 'name', 'value', 'unit', 'source', 'nominal', 'tol_upper', 'tol_lower', 'orig_no', 'matched', 'photo'];
 
   function dbToSheets(db) {
@@ -742,7 +957,17 @@
       '검사건': insp, '치수기준표': spec, '측정결과': meas, '핀좌표': pins,
       '설비목록': [['vendor', 'equip', 'order']].concat((d.equipment || []).map(function (e) { return [e.vendor, e.equip, e.order]; })),
       '일일점검': [['vendor', 'date', 'equip', 'item', 'result', 'value', 'photo', 'photo_hash']].concat((d.records || []).map(function (r) { return [r.vendor, r.date, r.equip, r.item, r.result, r.value, r.photo, r.photo_hash || '']; })),
-      '점검기준값': [['item', 'lower', 'upper']].concat((d.limits || []).map(function (l) { return [l.item, l.lower, l.upper]; }))
+      '점검기준값': [['item', 'lower', 'upper']].concat((d.limits || []).map(function (l) { return [l.item, l.lower, l.upper]; })),
+      '월간점검표': [GRID_COLS.slice()].concat((d.grids || []).map(function (g) {
+        return GRID_COLS.map(function (k) {
+          if (k === 'off_days') return (g.off_days || []).join(',');
+          if (k === 'ranges') return JSON.stringify(g.ranges || {});
+          return g[k] == null ? '' : g[k];
+        });
+      })),
+      '월간점검표_칸': [['grid_id', 'item', 'day', 'shift', 'value']].concat([].concat.apply([], (d.grids || []).map(function (g) {
+        return Object.keys(g.cells || {}).filter(function (k) { return g.cells[k] !== ''; }).map(function (k) { var p = k.split('|'); return [g.id, p[0], Number(p[1]), p[2], g.cells[k]]; });
+      })))
     };
   }
   function sheetObjs(rows) {
@@ -767,6 +992,17 @@
     db.daily.equipment = sheetObjs(sheets['설비목록']);
     db.daily.records = sheetObjs(sheets['일일점검']).map(function (r) { r.date = toDateStr(r.date); return r; });
     db.daily.limits = sheetObjs(sheets['점검기준값']);
+    var gmap = {};
+    db.daily.grids = sheetObjs(sheets['월간점검표']).map(function (o) {
+      var g = { cells: {} };
+      GRID_COLS.forEach(function (k) { g[k] = o[k] == null ? '' : String(o[k]); });
+      g.off_days = g.off_days ? g.off_days.split(',').map(Number).filter(function (n) { return n > 0; }) : [];
+      try { g.ranges = g.ranges ? JSON.parse(g.ranges) : {}; } catch (e) { g.ranges = {}; }
+      g.day_from = Number(g.day_from) || ''; g.day_to = Number(g.day_to) || '';
+      g.photo_date = toDateStr(o.photo_date);
+      gmap[g.id] = g; return g;
+    });
+    sheetObjs(sheets['월간점검표_칸']).forEach(function (o) { var g = gmap[String(o.grid_id)]; if (g) g.cells[cellKey(o.item, o.day, o.shift)] = String(o.value); });
     db.current = db.inspections.length ? db.inspections[0].id : null;
     return db;
   }
@@ -777,7 +1013,7 @@
       // offline_mode: 폐쇄망 모드(기본 켬) — 켜져 있으면 「AI 읽기」를 숨기고 어떤 요청도 밖으로 보내지 않습니다
       settings: { match_by_name: true, round_before_judge: false, blank_unit_as_spec: true, offline_mode: true, ai_model: 'gpt-4o-mini' },
       templates: [],
-      daily: { equipment: [], records: [], limits: [], repeat_days: '' }
+      daily: { equipment: [], records: [], limits: [], repeat_days: '', grids: [], formal_run: 3 }
     };
   }
   var seq = 0;
@@ -800,6 +1036,9 @@
     toDateStr: toDateStr, dailyBoard: dailyBoard, dailyChecks: dailyChecks,
     indexSpec: indexSpec, matchIndex: matchIndex, normalizeMeasRow: normalizeMeasRow, suggestMatches: suggestMatches, applyMatches: applyMatches,
     matchWhyText: matchWhyText, MATCH_LEVEL: MATCH_LEVEL, nextSpecNo: nextSpecNo, specFromMeas: specFromMeas, textToRows: textToRows,
+    SHEET_TEMPLATES: SHEET_TEMPLATES, GRID_KIND: GRID_KIND, sheetTemplate: sheetTemplate, normMark: normMark, cellKey: cellKey, daysInMonth: daysInMonth,
+    gridSlots: gridSlots, itemRange: itemRange, gridCutoff: gridCutoff, gridChecks: gridChecks, gridSummary: gridSummary, newGrid: newGrid,
+    aiPromptGrid: aiPromptGrid, applyAiCells: applyAiCells,
     aiPromptMeasure: aiPromptMeasure, aiPromptDaily: aiPromptDaily, parseAiJson: parseAiJson, hashBytes: hashBytes,
     dbToSheets: dbToSheets, sheetsToDb: sheetsToDb, emptyDb: emptyDb, newInspection: newInspection
   };

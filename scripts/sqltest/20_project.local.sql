@@ -58,7 +58,7 @@ begin
   perform public._assert(v_bad is null, '두 번 적용 후 표마다 정책 4개 (발견: ' || coalesce(v_bad, '없음') || ')');
   perform public._assert_eq(
     (select count(*) from pg_trigger where tgname like '%\_updated\_at' and not tgisinternal),
-    9::bigint, '두 번 적용 후 updated_at 트리거 9개');
+    10::bigint, '두 번 적용 후 updated_at 트리거 10개 (check_sheet 포함)');
 end $t$;
 
 do $t$ begin raise notice '[프로젝트] 함수 권한(proacl)'; end $t$;
@@ -120,6 +120,11 @@ begin
   perform public._assert_eq((select count(*) from public.daily_check), 2::bigint,
     '같은 협력사·점검일·설비·항목은 upsert 로 한 줄만 남는다 (덧붙이기 중복 방지)');
   insert into public.check_limit (item, lower, upper) values ('압력', 15, 20);
+  -- 2026-09-29: 월간 점검표 격자
+  insert into public.check_sheet (sheet_key, template, vendor, equip, month, photo_date, day_from, day_to, off_days, cells)
+    values ('G1', 'hob_daily', 'A사', '설비B', '2026-09', '2026-09-05', 1, 16, '{6}', '{"9|1|日": "4.5", "1|1|中": "✓"}');
+  perform public._assert_eq((select cells->>'9|1|日' from public.check_sheet where sheet_key = 'G1'), '4.5'::text,
+    '격자 칸 값이 jsonb 로 들어간다');
 
   perform public._assert_eq((select count(*) from public.dim_spec where no = '1'), 2::bigint,
     '기준표의 같은 항목번호 두 줄을 받는다 (도구가 확인필요로 드러내는 경우)');
@@ -144,7 +149,7 @@ do $t$
 declare t text;
 begin
   foreach t in array array['app_settings','import_template','inspection','dim_spec','measurement',
-                           'drawing_pin','equipment','daily_check','check_limit']
+                           'drawing_pin','equipment','daily_check','check_limit','check_sheet']
   loop
     perform public._assert_rows(format('select 1 from public.%I', t), 0, 'B 에게 A 의 ' || t || ' 가 안 보인다');
     perform public._assert_rows(format('update public.%I set updated_at = now()', t), 0, 'B 는 A 의 ' || t || ' 를 못 고친다');
@@ -180,7 +185,7 @@ do $t$
 declare t text;
 begin
   foreach t in array array['app_settings','import_template','inspection','dim_spec','measurement',
-                           'drawing_pin','equipment','daily_check','check_limit']
+                           'drawing_pin','equipment','daily_check','check_limit','check_sheet']
   loop
     perform public._assert_rows(format('select 1 from public.%I', t), 0, 'anon 에게 ' || t || ' 가 안 보인다');
   end loop;
@@ -213,6 +218,16 @@ begin
     '23505', '같은 점검항목의 기준값은 한 행');
   perform public._assert_raises(format('insert into public.daily_check (owner_id, vendor, date, equip, item) values (%L, %L, %L, %L, %L)', a, 'A사', '2026-09-28', '1호기', '온도'),
     '23505', '같은 협력사·점검일·설비·항목은 UNIQUE 가 막는다');
+  perform public._assert_raises(format('insert into public.check_sheet (owner_id, sheet_key, template, vendor, equip, month, day_from) values (%L, %L, %L, %L, %L, %L, 1)', a, 'G2', 'hob_daily', 'A사', '설비B', '2026-09'),
+    '23505', '같은 설비·같은 달·같은 장(시작일)은 한 번만');
+  perform public._assert_raises(format('insert into public.check_sheet (owner_id, sheet_key, template, vendor, equip, month) values (%L, %L, %L, %L, %L, %L)', a, 'G3', 'other', 'A사', '설비C', '2026-09'),
+    '23514', '점검표 양식은 정해진 두 가지만');
+  perform public._assert_raises(format('insert into public.check_sheet (owner_id, sheet_key, template, vendor, equip, month, day_from, day_to) values (%L, %L, %L, %L, %L, %L, 17, 16)', a, 'G4', 'hob_daily', 'A사', '설비C', '2026-09'),
+    '23514', '이 장이 덮는 날은 시작 ≤ 끝');
+  perform public._assert_raises(format('insert into public.check_sheet (owner_id, sheet_key, template, vendor, equip, month) values (%L, %L, %L, %L, %L, %L)', a, 'G5', 'hob_daily', 'A사', '설비C', '2026-13'),
+    '23514', '점검 연월은 YYYY-MM');
+  perform public._assert_raises(format('insert into public.check_sheet (owner_id, sheet_key, template, vendor, equip, month, cells) values (%L, %L, %L, %L, %L, %L, %L)', a, 'G6', 'hob_daily', 'A사', '설비C', '2026-09', '[1]'),
+    '23514', '칸 값은 jsonb 객체만');
   perform public._assert_raises(format('insert into public.app_settings (owner_id) values (%L)', a),
     '23505', '설정은 사용자당 1행');
   perform public._assert_raises(format('insert into public.dim_spec (owner_id, inspection_id, line_no, no, type) values (%L, %s, 7, %L, %L)', a, v_i, '5', '곡률'),

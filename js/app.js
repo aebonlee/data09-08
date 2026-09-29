@@ -315,10 +315,10 @@
       var r = L.parseAiJson(text);
       if (r.error) { toast('AI 답을 읽지 못했습니다: ' + r.error, true); return false; }
       opts.onRows(r.rows);
-      toast('AI 가 읽은 ' + r.rows.length + '줄을 표에 채웠습니다. 사진과 대조해 확인한 뒤 등록하십시오.');
+      toast(opts.doneMsg ? opts.doneMsg(r.rows.length) : 'AI 가 읽은 ' + r.rows.length + '줄을 표에 채웠습니다. 사진과 대조해 확인한 뒤 등록하십시오.');
     }
     return h('div', { class: 'ai-tools' },
-      h('p', { class: 'note' }, 'AI 읽기는 보안 요구가 없는 사진(협력사 점검표 등)에만 쓰십시오. 읽은 값은 표에 채워만 두고, 사람이 확인해 「등록」을 눌러야 들어갑니다.'),
+      h('p', { class: 'note' }, opts.note || 'AI 읽기는 보안 요구가 없는 사진(협력사 점검표 등)에만 쓰십시오. 읽은 값은 표에 채워만 두고, 사람이 확인해 「등록」을 눌러야 들어갑니다.'),
       h('div', { class: 'btn-row' },
         h('button', {
           class: 'btn', type: 'button', onclick: function (e) {
@@ -935,7 +935,8 @@
   function viewDaily() {
     var d = db.daily;
     main.appendChild(pageHead('일일점검 현황 (과제 B)'));
-    main.appendChild(h('div', { class: 'mode-note' }, '점검 데이터는 점검표 사진을 찍어 한 설비씩 넣거나, 표(엑셀·CSV)로 한꺼번에 넣습니다. 여러 협력사가 각자 올린 사진을 본사 한 곳에 모으는 업로드 링크·메일 알림은 서버가 필요해 다음 단계입니다.'));
+    main.appendChild(h('div', { class: 'mode-note' }, '협력사 월간 점검표(날짜 × 점검항목 격자)는 아래 「월간 점검표 사진으로 등록」에서 양식을 골라 옮겨 적습니다. 하루 한 장짜리 점검표는 「점검표 사진으로 등록」, 많은 양은 표(엑셀·CSV)로 넣습니다. 여러 협력사가 각자 올린 사진을 본사 한 곳에 모으는 업로드 링크·메일 알림은 서버가 필요해 다음 단계입니다.'));
+    main.appendChild(gridCard(d));
     main.appendChild(dailyPhotoCard(d));
     function put(key, label) {
       return function (objs) {
@@ -1022,6 +1023,201 @@
     main.appendChild(ccard);
   }
 
+  // 과제 B — 월간 점검표 격자 (2026-09-29 메일로 받은 중국어 양식 2종의 구조)
+  // 사진 한 장 = 한 설비 한 달. 양식을 고르고 사진을 보며 칸마다 ✓ · × · 숫자를 옮겨 적습니다.
+  // 칸을 누를 때마다 화면 전체를 다시 그리면 가로 스크롤이 처음으로 돌아가므로, 칸은 그 자리에서만 고칩니다.
+  var WEEK = ['일', '월', '화', '수', '목', '금', '토'];
+  function gridCard(d) {
+    d.grids = d.grids || [];
+    var nf = ui.gridNew || (ui.gridNew = { template: L.SHEET_TEMPLATES[0].id, vendor: '', equip: '', month: today().slice(0, 7), photo_date: today() });
+    function inp(key, label, type, list) {
+      var x = h('input', { name: 'gn_' + key, value: nf[key] || '', type: type || 'text', list: list || null });
+      x.addEventListener('change', function () { nf[key] = x.value.trim(); });
+      return field(label, x);
+    }
+    var tsel = h('select', { name: 'gn_template' }, L.SHEET_TEMPLATES.map(function (t) { return h('option', { value: t.id, selected: t.id === nf.template ? 'selected' : null }, t.ko + ' — ' + t.zh); }));
+    tsel.addEventListener('change', function () { nf.template = tsel.value; });
+    var vendors = {}; d.equipment.concat(d.grids).forEach(function (e) { if (e.vendor) vendors[e.vendor] = true; });
+    var card = h('div', { class: 'card', id: 'dailyGrid' }, h('h2', null, '월간 점검표 사진으로 등록 (날짜 × 점검항목 격자)'),
+      h('p', null, '협력사 점검표는 한 장에 한 설비의 한 달이 들어 있습니다. 양식을 고르고 사진을 보며 칸마다 ✓ · × · 숫자를 옮겨 적으면, 관리 범위 이탈 · × 표시 · 점검 누락 · 서명 누락 · 형식적 기록 의심을 바로 찾아 줍니다. 양식의 중국어 항목에는 한국어 번역을 붙였습니다.'),
+      h('datalist', { id: 'gVendors' }, Object.keys(vendors).map(function (v) { return h('option', { value: v }); })),
+      h('div', { class: 'form-grid' }, field('양식', tsel, 'span-2'), inp('vendor', '협력사 *', 'text', 'gVendors'), inp('equip', '설비 *'),
+        inp('month', '점검 연월 *', 'month'), inp('photo_date', '사진 찍은 날 *', 'date')),
+      h('div', { class: 'btn-row', style: 'margin-top:12px' }, h('button', {
+        class: 'btn btn-primary', type: 'button', onclick: function () {
+          if (!nf.vendor || !nf.equip || !/^\d{4}-\d{2}$/.test(nf.month || '')) { toast('협력사·설비·점검 연월을 넣으십시오.', true); return; }
+          var g = L.newGrid(nf); d.grids.push(g); ui.gridId = g.id; ui.gridPhoto = null; save(); render();
+          setTimeout(function () { var el = document.getElementById('gridEditor'); if (el) el.scrollIntoView(); }, 0);
+        }
+      }, '새 점검표 만들기')));
+    if (d.grids.length) append(card, h('div', { class: 'table-wrap', style: 'margin-top:14px' }, h('table', { class: 'list' },
+      h('thead', null, h('tr', null, ['양식', '협력사', '설비', '연월', '사진 찍은 날', '누락', '이상', '확인', ''].map(function (x) { return h('th', null, x); }))),
+      h('tbody', null, d.grids.map(function (g, i) {
+        var t = L.sheetTemplate(g.template), sm = L.gridSummary(L.gridChecks(g, { formal_run: d.formal_run }));
+        return h('tr', { class: g.id === ui.gridId ? 'row-sel' : null }, h('td', null, t ? t.zh : g.template), h('td', null, g.vendor), h('td', null, g.equip),
+          h('td', { class: 'nowrap' }, g.month), h('td', { class: 'nowrap' }, g.photo_date),
+          h('td', { class: 'num' }, String(sm.missed)), h('td', { class: 'num' }, String(sm.NOK - sm.missed)), h('td', { class: 'num' }, String(sm.CHECK)),
+          h('td', { class: 'nowrap' },
+            h('button', { class: 'btn btn-small', type: 'button', onclick: function () { ui.gridId = g.id; ui.gridPhoto = null; render(); } }, '열기'), ' ',
+            h('button', { class: 'btn btn-small btn-danger', type: 'button', onclick: function () {
+              confirmBox('점검표 지우기', g.vendor + ' ' + g.equip + ' ' + g.month + ' 점검표를 지웁니다.', '지우기', function () { d.grids.splice(i, 1); if (ui.gridId === g.id) ui.gridId = null; save(); render(); });
+            } }, '지우기')));
+      })))));
+    var g = d.grids.filter(function (x) { return x.id === ui.gridId; })[0];
+    if (g && L.sheetTemplate(g.template)) append(card, gridEditor(d, g));
+    return card;
+  }
+
+  function gridEditor(d, g) {
+    var tpl = L.sheetTemplate(g.template);
+    var wrap = h('div', { class: 'grid-editor', id: 'gridEditor' }, h('h3', null, tpl.zh + ' · ' + tpl.ko + ' — ' + g.vendor + ' ' + g.equip + ' ' + g.month));
+    function hin(key, label, type, hint) {
+      var x = h('input', { name: 'g_' + key, value: g[key] == null ? '' : String(g[key]), type: type || 'text', placeholder: hint || null, inputmode: type === 'number' ? 'numeric' : null });
+      x.addEventListener('change', function () {
+        var v = x.value.trim();
+        g[key] = type === 'number' ? (parseInt(v, 10) || '') : v; save(); render();
+      });
+      return field(label, x);
+    }
+    append(wrap, h('div', { class: 'form-grid' },
+      hin('vendor', '협력사'), hin('equip', '설비(设备名称)'), hin('equip_no', '설비번호(设备编号)'), hin('dept', '사용부문(使用部门)'),
+      hin('keeper', tpl.sign === 'header' ? '보전자(保养人) — 가명·사번 *' : '보전자(保养人) — 가명·사번', 'text', '실명 대신 가명'),
+      hin('month', '점검 연월', 'month'), hin('photo_date', '사진 찍은 날', 'date'),
+      hin('day_from', '이 장이 덮는 날 — 부터', 'number'), hin('day_to', '이 장이 덮는 날 — 까지', 'number')),
+      h('p', { class: 'note' }, tpl.rows_note + ' 사진 찍은 날보다 앞선 날 중 칸이 전부 빈 날은 「점검 누락」입니다. 사진 찍은 날은 점검이 진행 중일 수 있어 누락으로 세지 않습니다.'));
+
+    // 사진
+    var ph = ui.gridPhotoFor === g.id ? ui.gridPhoto : null;
+    append(wrap, h('div', { class: 'btn-row', style: 'margin-top:10px' },
+      photoButton(ph ? '다른 사진 찍기·올리기' : '점검표 사진 찍기·올리기', function (f) {
+        readPhoto(f, function (p) { ui.gridPhoto = p; ui.gridPhotoFor = g.id; g.photo = p.name; g.photo_hash = p.hash; save(); render(); });
+      }),
+      ph ? h('button', { class: 'btn', type: 'button', onclick: function () { ui.gridPhoto = null; render(); } }, '사진 닫기') : null,
+      g.photo ? h('span', { class: 'note' }, '등록한 사진: ' + g.photo) : null));
+    if (g.photo_hash) {
+      var dup = d.grids.filter(function (x) { return x !== g && x.photo_hash === g.photo_hash; })[0]
+        || d.records.filter(function (r) { return r.photo_hash === g.photo_hash; })[0];
+      if (dup) append(wrap, h('div', { class: 'alert warn' }, '이 사진은 이미 올린 사진과 같은 파일입니다 — ' + (dup.month || dup.date) + ' ' + dup.vendor + ' ' + dup.equip + '. 새로 찍은 사진인지 확인해 주십시오.'));
+    }
+    if (ph) append(wrap, photoViewer(ph));
+
+    // 관리 범위(설비마다 다르면 고침) + 형식적 기록 기준
+    var nums = tpl.items.filter(function (it) { return it.kind === 'num'; });
+    g.ranges = g.ranges || {};
+    var fr = h('input', { type: 'number', min: 0, step: 1, name: 'formal_run', value: d.formal_run === '' || d.formal_run == null ? '' : String(d.formal_run), placeholder: '0 이면 끔' });
+    fr.addEventListener('change', function () { d.formal_run = fr.value.trim() === '' ? 3 : Math.max(0, parseInt(fr.value, 10) || 0); save(); render(); });
+    append(wrap, h('div', { class: 'grid-side' },
+      h('div', { class: 'table-wrap' }, h('table', { class: 'list edit' },
+        h('thead', null, h('tr', null, ['숫자 항목', '하한', '상한', '단위'].map(function (x) { return h('th', null, x); }))),
+        h('tbody', null, nums.map(function (it) {
+          var o = g.ranges[it.no] || {};
+          function rin(k) {
+            var x = h('input', { value: o[k] == null ? '' : String(o[k]), placeholder: String(it[k]), inputmode: 'decimal', 'aria-label': it.no + '번 ' + (k === 'lower' ? '하한' : '상한') });
+            x.addEventListener('change', function () { var r = g.ranges[it.no] || (g.ranges[it.no] = {}); r[k] = x.value.trim(); if (!r.lower && !r.upper) delete g.ranges[it.no]; save(); paint(); });
+            return h('td', null, x);
+          }
+          return h('tr', null, h('td', null, it.no + '. ' + it.ko), rin('lower'), rin('upper'), h('td', null, it.unit || ''));
+        })))),
+      h('p', { class: 'note' }, '빈칸이면 양식에 인쇄된 정상 범위를 씁니다. 설비마다 범위가 다르면 여기서 고치십시오.'),
+      h('div', { class: 'form-grid' }, field('모든 항목 ✓ + 숫자까지 똑같은 기록이 몇 칸 이어지면 「형식적 기록 의심」으로 볼지', fr))));
+
+    // 격자
+    var slots = L.gridSlots(g, tpl);
+    var shifts = tpl.shifts;
+    var span = shifts.length || 1;
+    var ym = String(g.month).split('-');
+    var off = {}; (g.off_days || []).forEach(function (x) { off[Number(x)] = true; });
+    var days = []; slots.forEach(function (s) { if (days.indexOf(s.day) < 0) days.push(s.day); });
+    var tds = {}, heads = {};
+    function wd(day) { return WEEK[new Date(Date.UTC(Number(ym[0]), Number(ym[1]) - 1, day)).getUTCDay()]; }
+    function setCell(k, v) { if (v) g.cells[k] = v; else delete g.cells[k]; save(); paint(); }
+    function cellCtl(it, s) {
+      var k = L.cellKey(it.no, s.day, s.shift);
+      var lab = it.no + '번 ' + s.day + '일' + (s.shift ? ' ' + s.shift : '');
+      if (it.kind === 'num') {
+        var x = h('input', { class: 'gnum', value: g.cells[k] || '', inputmode: 'decimal', 'aria-label': lab });
+        x.addEventListener('change', function () { var v = L.normMark(x.value, 'num'); x.value = v; setCell(k, v); });
+        return x;
+      }
+      var cyc = it.kind === 'sign' ? ['', '✓'] : ['', '✓', '×'];
+      var b = h('button', { class: 'gmark', type: 'button', 'aria-label': lab }, g.cells[k] || '');
+      b.addEventListener('click', function () { var i = cyc.indexOf(g.cells[k] || ''); var v = cyc[(i + 1) % cyc.length]; b.textContent = v; setCell(k, v); });
+      return b;
+    }
+    var thead = h('thead', null,
+      h('tr', null, h('th', { class: 'gitem', rowspan: shifts.length ? 3 : 2 }, '점검항목'), days.map(function (day) {
+        var th = h('th', { colspan: span, class: 'gday' + (off[day] ? ' g-off' : '') }, h('span', null, String(day)), h('small', null, wd(day)),
+          h('button', { class: 'goff', type: 'button', 'aria-pressed': off[day] ? 'true' : 'false', 'aria-label': day + '일 휴무 표시', onclick: function () {
+            var list = (g.off_days || []).filter(function (x) { return Number(x) !== day; });
+            if (!off[day]) list.push(day);
+            g.off_days = list.sort(function (a, b) { return a - b; }); save(); render();
+          } }, off[day] ? '휴무' : '근무'));
+        heads[day] = th; return th;
+      })),
+      shifts.length ? h('tr', null, slots.map(function (s) { return h('th', { class: 'gshift' }, s.shift); })) : null,
+      h('tr', null, slots.map(function (s) {
+        return h('th', { class: 'gfill' }, h('button', { class: 'gmark', type: 'button', title: '이 칸의 빈 체크 항목을 모두 ✓ 로', 'aria-label': s.day + '일' + (s.shift ? ' ' + s.shift : '') + ' 빈 체크 항목 모두 ✓', onclick: function () {
+          tpl.items.forEach(function (it) { var k = L.cellKey(it.no, s.day, s.shift); if (it.kind !== 'num' && !g.cells[k]) { g.cells[k] = '✓'; var b = tds[k] && tds[k].firstChild; if (b) b.textContent = '✓'; } });
+          save(); paint();
+        } }, '✓'));
+      })));
+    var tbody = h('tbody', null, tpl.items.map(function (it) {
+      return h('tr', null, h('th', { class: 'gitem', scope: 'row' }, h('b', null, it.no + '. '), it.ko, h('small', { lang: 'zh' }, it.zh)),
+        slots.map(function (s) { var td = h('td', { class: 'gc' + (off[s.day] ? ' g-off' : '') }, cellCtl(it, s)); tds[L.cellKey(it.no, s.day, s.shift)] = td; return td; }));
+    }));
+    append(wrap, h('p', { class: 'note', style: 'margin-top:14px' }, '체크 칸은 누를 때마다 빈칸 → ✓ → × 로 바뀝니다. 숫자 칸에는 사진의 숫자를 그대로 적습니다(단위 빼고). 맨 위 「✓」 줄은 그날 빈 체크 항목을 한 번에 ✓ 로 채웁니다. 쉬는 날은 날짜 아래 「근무」를 눌러 「휴무」로 바꾸십시오. 서명 칸은 이름을 옮기지 말고 서명이 있으면 ✓ 만 누르십시오.'),
+      h('div', { class: 'table-wrap grid-wrap' }, h('table', { class: 'grid-table' }, thead, tbody)));
+
+    var ta = h('textarea', { rows: 2, name: 'g_note' }); ta.value = g.note || '';
+    ta.addEventListener('change', function () { g.note = ta.value; save(); });
+    append(wrap, field('이상 상황 기록(异常情况记录) — 사진에 적힌 내용', ta));
+
+    var ai = aiTools({
+      photo: function () { return ph; },
+      prompt: function () { return L.aiPromptGrid(g); },
+      note: 'AI 읽기는 보안 요구가 없는 협력사 점검표에만 쓰십시오. 중국어 양식도 읽습니다. 읽은 칸은 격자에 바로 채워지고, 흐린 칸은 노란 점선으로 표시됩니다. 사진과 대조해 틀린 칸을 고쳐 주십시오.',
+      doneMsg: function (n) { return 'AI 가 읽은 ' + n + '칸을 격자에 채웠습니다. 노란 점선 칸부터 사진과 대조해 주십시오.'; },
+      onRows: function (rows) { var r = L.applyAiCells(g, rows); ui.gridUnsure = r.unsure; save(); render(); }
+    });
+    append(wrap, ai || h('p', { class: 'note' }, '폐쇄망 모드에서는 AI 읽기가 꺼져 있습니다. 협력사 점검표처럼 보안 요구가 없는 사진이면 「설정·데이터」에서 폐쇄망 모드를 끄고 AI 읽기(중국어 양식도 읽음)로 격자를 채운 뒤 확인할 수 있습니다.'));
+
+    var res = h('div', { class: 'grid-result' });
+    append(wrap, res);
+    function paint() {
+      var checks = L.gridChecks(g, { formal_run: d.formal_run });
+      var unsure = {}; (ui.gridUnsure || []).forEach(function (k) { unsure[k] = true; });
+      Object.keys(tds).forEach(function (k) { tds[k].classList.remove('g-NOK', 'g-CHECK', 'g-unsure'); if (unsure[k]) tds[k].classList.add('g-unsure'); });
+      Object.keys(heads).forEach(function (k) { heads[k].classList.remove('g-NOK', 'g-CHECK'); });
+      checks.forEach(function (c) {
+        if (c.no && c.day !== '') { var td = tds[L.cellKey(c.no, c.day, c.shift)]; if (td) td.classList.add('g-' + c.level); }
+        else if (c.day !== '') {
+          if (heads[c.day]) heads[c.day].classList.add('g-' + c.level);
+          tpl.items.forEach(function (it) { var td = tds[L.cellKey(it.no, c.day, c.shift)]; if (td && !td.classList.contains('g-NOK')) td.classList.add('g-' + c.level); });
+        }
+      });
+      var sm = L.gridSummary(checks);
+      res.textContent = '';
+      append(res, h('h3', null, '검사 결과'),
+        h('div', { class: 'tiles' },
+          h('div', { class: 'tile ' + (sm.missed ? 'NOK' : 'OK') }, h('b', null, String(sm.missed)), h('span', null, '점검 누락 칸')),
+          h('div', { class: 'tile ' + (sm.NOK - sm.missed ? 'NOK' : 'OK') }, h('b', null, String(sm.NOK - sm.missed)), h('span', null, '이상(범위 이탈·×·서명)')),
+          h('div', { class: 'tile ' + (sm.CHECK ? 'CHECK' : 'OK') }, h('b', null, String(sm.CHECK)), h('span', null, '확인 필요'))),
+        checks.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'list' },
+          h('thead', null, h('tr', null, ['날짜', '교대', '점검항목', '값', '검사 결과', '내용'].map(function (x) { return h('th', null, x); }))),
+          h('tbody', null, checks.map(function (c) {
+            return h('tr', { class: 'row-' + c.level }, h('td', { class: 'nowrap' }, c.day === '' ? '머리칸' : c.day + '일'), h('td', null, c.shift),
+              h('td', null, c.no ? c.no + '. ' + c.item : ''), h('td', { class: 'num' }, fmtNum(c.value)), h('td', null, c.label), h('td', null, c.detail));
+          })))) : h('p', { class: 'note' }, '걸린 규칙이 없습니다.'),
+        checks.length ? h('div', { class: 'btn-row', style: 'margin-top:8px' }, h('button', { class: 'btn btn-small', type: 'button', onclick: function () {
+          downloadCsv(prefix() + '월간점검표_검사_' + safeName(g.vendor + '_' + g.equip + '_' + g.month) + '.csv',
+            [['협력사', '설비', '연월', '날짜', '교대', '점검항목', '값', '검사 결과', '내용']].concat(checks.map(function (c) { return [g.vendor, g.equip, g.month, c.day, c.shift, c.no ? c.no + '. ' + c.item : '', c.value, c.label, c.detail]; })));
+        } }, '검사 결과 CSV 내려받기')) : null,
+        h('p', { class: 'note' }, '「형식적 기록 의심」은 경고일 뿐입니다. 실제로 매일 같은 값이 나올 수도 있으니 현장 확인 뒤 판단하십시오.'));
+    }
+    paint();
+    return wrap;
+  }
+
   // 과제 B — 점검표 사진 한 장 = 협력사·점검일·설비 하나. 사진을 보며 점검항목별 판정·측정값을 옮겨 적습니다.
   // 보안 요구가 없는 협력사용이라 폐쇄망 모드를 끄면 「AI 읽기」로 표를 채울 수 있습니다.
   function dailyPhotoCard(d) {
@@ -1034,7 +1230,7 @@
       x.addEventListener('change', function () { fm[key] = x.value.trim(); if (key === 'vendor') render(); });
       return field(label, x);
     }
-    var card = h('div', { class: 'card', id: 'dailyPhoto' }, h('h2', null, '점검표 사진으로 등록'),
+    var card = h('div', { class: 'card', id: 'dailyPhoto' }, h('h2', null, '점검표 사진으로 등록 (하루 한 장 양식)'),
       h('p', null, '휴대폰으로 설비 점검표를 찍거나 사진을 올린 뒤, 사진을 보며 점검항목별 판정(○·×)과 측정값을 옮겨 적습니다.' + (offline() ? ' 「설정·데이터」에서 폐쇄망 모드를 끄면 AI 가 사진을 읽어 표를 채워 줍니다(협력사용, 보안 요구가 없을 때).' : '')),
       h('datalist', { id: 'dpVendors' }, Object.keys(vendors).map(function (v) { return h('option', { value: v }); })),
       h('datalist', { id: 'dpEquips' }, Object.keys(equips).map(function (v) { return h('option', { value: v }); })),

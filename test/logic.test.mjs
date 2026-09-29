@@ -292,6 +292,87 @@ test('같은 사진 파일이 다른 날·다른 설비에 다시 쓰이면 확�
 });
 
 
+console.log('2026-09-29 메일 — 과제 B 월간 점검표 격자(중국어 양식 2종)');
+{
+  const [g1, g2] = Sample.sampleGrids();
+  const kinds = (g, o) => L.gridChecks(g, o || {}).map(c => [c.day, c.shift, c.no, c.kind].filter(x => x !== '').join(' '));
+  test('양식 2종: CNC 9항목(1·8 숫자, 9 서명), 호빙기 13항목 × 日/中(9 숫자), 중국어·한국어 모두 있음', () => {
+    const a = L.sheetTemplate('cnc_monthly'), b = L.sheetTemplate('hob_daily');
+    assert.equal(a.items.length, 9); assert.equal(b.items.length, 13); assert.deepEqual(b.shifts, ['日', '中']);
+    assert.deepEqual(a.items.filter(i => i.kind === 'num').map(i => [i.no, i.lower, i.upper]), [['1', 5, 7], ['8', 7, 12]]);
+    assert.deepEqual(b.items.filter(i => i.kind === 'num').map(i => [i.no, i.lower, i.upper]), [['9', 4, 5]]);
+    assert.equal(a.items[8].kind, 'sign');
+    assert.ok([...a.items, ...b.items].every(i => /[一-鿿]/.test(i.zh) && /[가-힣]/.test(i.ko)));
+  });
+  test('칸 표시 정리: √·v·o·无 → ✓, x·NG·有 → ×, 숫자는 단위만 떼고 적힌 그대로, 서명은 이름 대신 ✓', () => {
+    assert.deepEqual(['√', 'v', 'o', '无', '없음'].map(x => L.normMark(x, 'check')), ['✓', '✓', '✓', '✓', '✓']);
+    assert.deepEqual(['x', 'NG', '有'].map(x => L.normMark(x, 'check')), ['×', '×', '×']);
+    assert.equal(L.normMark(' 8.3% ', 'num'), '8.3'); assert.equal(L.normMark('6.0MPa', 'num'), '6.0');
+    assert.equal(L.normMark('홍길동', 'sign'), '✓'); assert.equal(L.normMark('', 'check'), '');
+  });
+  test('CNC 예시(사진 9/12): 4일 형식적 기록 의심 · 8일 서명 없음 · 9일 누락 · 10일 유압 7.8 이탈 — 휴무 6일과 사진 찍은 12일은 누락 아님', () => {
+    assert.deepEqual(kinds(g1), ['4 formal_suspect', '8 9 missing_sign', '9 missed_day', '10 1 out_of_range']);
+  });
+  test('호빙기 예시(사진 9/5): 2일 中 압력 5.5 이탈 · 3일 中 누락 · 4일 日 11번 ×', () => {
+    assert.deepEqual(kinds(g2), ['2 中 9 out_of_range', '3 中 missed_day', '4 日 11 abnormal']);
+  });
+  test('관리 범위 경계 포함: 7.0 은 정상, 7.01 은 이탈 / 설비별 범위를 고치면 그 값으로', () => {
+    const g = JSON.parse(JSON.stringify(g1));
+    g.cells['1|10|'] = '7.0'; assert.ok(!kinds(g).includes('10 1 out_of_range'));
+    g.cells['1|10|'] = '7.01'; assert.ok(kinds(g).includes('10 1 out_of_range'));
+    g.ranges = { '1': { lower: '5', upper: '8' } }; assert.ok(!kinds(g).includes('10 1 out_of_range'));
+    g.cells['8|11|'] = '6.9'; assert.ok(kinds(g).includes('11 8 out_of_range'));
+  });
+  test('휴무로 표시하면 누락 아님, 일부만 빈칸이면 「일부 항목 빈칸」, 숫자 칸에 ✓ 면 숫자 아님', () => {
+    const g = JSON.parse(JSON.stringify(g1));
+    g.off_days = [6, 9]; assert.ok(!kinds(g).some(k => k.endsWith('missed_day')));
+    delete g.cells['3|7|']; assert.ok(kinds(g).includes('7 3 blank_cell'));
+    g.cells['8|7|'] = '✓'; assert.ok(kinds(g).includes('7 8 invalid_value'));
+  });
+  test('사진 찍은 날 뒤에 적힌 기록은 확인 필요, 다음 달에 찍은 사진이면 말일까지 전부 누락 검사', () => {
+    const g = JSON.parse(JSON.stringify(g1));
+    g.cells['2|20|'] = '✓'; assert.ok(kinds(g).includes('20 after_photo'));
+    const h = JSON.parse(JSON.stringify(g1)); h.photo_date = '2026-10-02';
+    assert.equal(L.gridChecks(h, {}).filter(c => c.kind === 'missed_day').length, 1 + (30 - 11)); // 9일 + 12~30일
+  });
+  test('보전인(머리칸) 빈칸이면 호빙기 양식은 서명 누락 1건', () => {
+    const g = JSON.parse(JSON.stringify(g2)); g.keeper = '';
+    assert.equal(L.gridChecks(g, {}).filter(c => c.kind === 'missing_sign' && c.day === '').length, 1);
+  });
+  test('형식적 기록 의심: 기준 칸 수(3)부터, 숫자가 하나라도 다르거나 × 가 있으면 아님, 0 이면 끔', () => {
+    const g = JSON.parse(JSON.stringify(g1));
+    assert.equal(L.gridChecks(g, { formal_run: 2 }).filter(c => c.kind === 'formal_suspect').length, 2); // 3일·4일
+    assert.equal(L.gridChecks(g, { formal_run: 0 }).filter(c => c.kind === 'formal_suspect').length, 0);
+    g.cells['8|3|'] = '8.4'; assert.ok(!kinds(g).some(k => k.endsWith('formal_suspect')));
+    const h = JSON.parse(JSON.stringify(g1)); h.cells['1|3|'] = '6'; // 6 과 6.0 은 같은 숫자
+    assert.ok(kinds(h).includes('4 formal_suspect'));
+  });
+  test('AI 요청문: 중국어 양식을 읽는다고 밝히고, 항목 원문·교대·JSON 격자 형식·이름 금지가 들어감', () => {
+    const p = L.aiPromptGrid(g2);
+    assert.ok(p.includes('중국어')); assert.ok(p.includes('总系统压力')); assert.ok(p.includes('日·中'));
+    assert.ok(p.includes('"cells"')); assert.ok(p.includes('이름')); assert.ok(p.includes('해 줘'));
+  });
+  test('AI 답(격자 JSON) → 칸 채우기: 없는 항목·범위 밖 날짜·빈 표시는 건너뛰고, 불확실 칸은 따로', () => {
+    const g = L.newGrid({ template: 'hob_daily', vendor: 'V', equip: 'E', month: '2026-09', photo_date: '2026-09-03' });
+    const ans = L.parseAiJson('```json\n{"cells":[{"item":"9","day":1,"shift":"日","mark":"4.5"},{"item":"1","day":1,"shift":"中","mark":"√","unsure":true},{"item":"99","day":1,"shift":"日","mark":"✓"},{"item":"2","day":20,"shift":"日","mark":"✓"},{"item":"3","day":2,"shift":"日","mark":""}],"abnormal_note":""}\n```');
+    const r = L.applyAiCells(g, ans.rows);
+    assert.deepEqual([r.filled, r.skipped], [2, 3]); assert.deepEqual(r.unsure, ['1|1|中']);
+    assert.equal(g.cells['9|1|日'], '4.5'); assert.equal(g.cells['1|1|中'], '✓');
+  });
+  test('새 점검표: 9월 CNC 는 1~30일, 호빙기는 1~16일 × 2교대 = 32칸', () => {
+    const a = L.newGrid({ template: 'cnc_monthly', month: '2026-09' }), b = L.newGrid({ template: 'hob_daily', month: '2026-09' });
+    assert.equal(L.gridSlots(a, L.sheetTemplate(a.template)).length, 30); assert.equal(L.gridSlots(b, L.sheetTemplate(b.template)).length, 32);
+    assert.equal(L.daysInMonth('2028-02'), 29);
+  });
+  test('엑셀 백업 왕복: 점검표 2장·칸·휴무·범위가 그대로, 검사 결과 동일', () => {
+    const db = Sample.build(); db.daily.grids[0].ranges = { '1': { lower: '5', upper: '7.5' } };
+    const back = L.sheetsToDb(L.dbToSheets(db), db);
+    assert.equal(back.daily.grids.length, 2);
+    back.daily.grids.forEach((g, i) => assert.deepEqual(kinds(g), kinds(db.daily.grids[i])));
+    assert.deepEqual(back.daily.grids[0].off_days, [6]); assert.equal(back.daily.grids[1].cells['9|2|中'], '5.5');
+  });
+}
+
 console.log('예시 파일로 짝 제안 끝까지 (samples/)');
 {
   const fs = await import('node:fs');

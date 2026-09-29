@@ -220,3 +220,35 @@ table.list td .sub { display: block; color: var(--muted); font-size: .82rem; whi
 .quick-edit { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 16px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: #f8fafc; }
 .quick-edit h3 { margin: 0; }
 .quick-edit .field input { min-height: 38px; }
+
+/* 과제 B 월간 점검표 격자 (2026-09-29) */
+.field.span-2 { grid-column: span 2; }
+@media (max-width: 560px) { .field.span-2 { grid-column: auto; } }
+tr.row-sel td { background: #eaf1fb; }
+td.nowrap, .nowrap { white-space: nowrap; }
+.grid-editor { margin-top: 18px; padding-top: 14px; border-top: 2px solid var(--line); display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.grid-editor h3 { margin: 0; }
+.grid-side .table-wrap { max-width: 560px; }
+.grid-wrap { max-height: 75vh; overflow: auto; }
+table.grid-table { border-collapse: separate; border-spacing: 0; font-size: .86rem; }
+table.grid-table th, table.grid-table td { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 2px; text-align: center; background: var(--surface); }
+table.grid-table thead th { position: sticky; top: 0; z-index: 2; background: #f1f4f8; }
+table.grid-table th.gitem { position: sticky; left: 0; z-index: 3; text-align: left; min-width: 180px; max-width: 240px; padding: 6px 8px; font-weight: 600; }
+table.grid-table tbody th.gitem { z-index: 1; background: var(--surface); }
+table.grid-table th.gitem small { display: block; color: var(--muted); font-weight: 400; font-size: .76rem; }
+table.grid-table th.gday span { display: block; font-weight: 700; }
+table.grid-table th.gday small { display: block; color: var(--muted); font-weight: 400; }
+.goff { margin-top: 2px; font-size: .72rem; padding: 2px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--muted); cursor: pointer; }
+.goff[aria-pressed="true"] { background: #5b6675; color: #fff; border-color: #5b6675; }
+.gmark { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); font-size: 1rem; font-weight: 700; cursor: pointer; color: var(--text); padding: 0; }
+.gnum { width: 48px; height: 34px; border: 1px solid var(--line); border-radius: 4px; text-align: center; font-size: .9rem; padding: 0 2px; }
+td.gc.g-off, th.g-off { background: #eceff3; }
+td.gc.g-CHECK, th.gday.g-CHECK { background: var(--check-bg); }
+td.gc.g-NOK, th.gday.g-NOK { background: var(--nok-bg); }
+td.gc.g-NOK .gmark, td.gc.g-NOK .gnum { border-color: var(--nok); color: var(--nok); }
+td.gc.g-unsure .gmark, td.gc.g-unsure .gnum { outline: 2px dashed var(--check); }
+.grid-result h3 { margin: 6px 0 10px; }
+@media (max-width: 560px) {
+  table.grid-table th.gitem { min-width: 118px; max-width: 140px; font-size: .78rem; padding: 4px 6px; }
+  table.grid-table th.gitem small { font-size: .7rem; }
+}

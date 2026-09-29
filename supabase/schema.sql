@@ -22,6 +22,7 @@
 --    equipment        협력사 설비 목록                       ← db.daily.equipment[]
 --    daily_check      일일점검 데이터                        ← db.daily.records[]
 --    check_limit      점검항목 관리 기준값                   ← db.daily.limits[]
+--    check_sheet      월간 점검표 격자(날짜×항목×교대, 2026-09-29) ← db.daily.grids[]
 --
 --  도면 이미지는 표에 넣지 않습니다. 몇 MB 짜리 이미지를 행에 담으면 조회가 무거워지므로
 --  앱 연결 단계에서 Supabase Storage(비공개 버킷)에 올리고, inspection.drawing_image_path 에
@@ -192,6 +193,38 @@ create table if not exists public.check_limit (
   constraint check_limit_range check (lower is null or upper is null or lower <= upper)
 );
 
+-- 월간 점검표 격자 (과제 B, 2026-09-29 메일 샘플 반영)
+-- 협력사 점검표 한 장 = 한 설비 한 달. 칸 값은 cells jsonb {"항목|날짜|교대": "✓"·"×"·"6.0"} 로 둡니다
+-- (양식마다 항목·교대 수가 달라 칸을 행으로 펼치면 한 장에 수백 행이 되기 때문). 서명 칸은 이름 대신 "✓".
+create table if not exists public.check_sheet (
+  id          bigint generated always as identity primary key,
+  owner_id    uuid not null default auth.uid(),
+  sheet_key   text not null,                                      -- 앱의 grid.id
+  template    text not null check (template in ('cnc_monthly', 'hob_daily')),
+  vendor      text not null check (length(btrim(vendor)) > 0),
+  equip       text not null check (length(btrim(equip)) > 0),
+  equip_no    text not null default '',
+  dept        text not null default '',
+  keeper      text not null default '',                           -- 보전자 — 가명·사번(실명 넣지 않기)
+  month       text not null check (month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+  photo_date  date,                                               -- 사진 찍은 날(누락 검사 기준)
+  day_from    smallint not null default 1  check (day_from between 1 and 31),
+  day_to      smallint not null default 31 check (day_to between 1 and 31),
+  off_days    smallint[] not null default '{}',                   -- 휴무일
+  ranges      jsonb not null default '{}' check (jsonb_typeof(ranges) = 'object'),  -- 설비별 관리 범위 {"1": {"lower": "5", "upper": "7"}}
+  cells       jsonb not null default '{}' check (jsonb_typeof(cells) = 'object'),
+  note        text not null default '',                           -- 이상 상황 기록(异常情况记录)
+  photo       text not null default '',
+  photo_hash  text not null default '',
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  constraint check_sheet_days check (day_from <= day_to),
+  -- ⚠ upsert 시 onConflict: 'owner_id,sheet_key'
+  constraint check_sheet_owner_key unique (owner_id, sheet_key),
+  -- 같은 설비·같은 달·같은 장(1~16 / 17~말일)은 한 번만
+  constraint check_sheet_natural_key unique (owner_id, vendor, equip, month, day_from)
+);
+
 -- 1-1. 2026-09-29 추가 칸 — 이미 표를 만든 프로젝트에 다시 실행해도 맞춰지도록
 alter table public.measurement drop constraint if exists measurement_no_check;
 alter table public.measurement alter column no set default '';
@@ -206,6 +239,9 @@ alter table public.measurement add constraint measurement_matched_check check (m
 alter table public.daily_check add column if not exists photo_hash text not null default '';
 alter table public.app_settings add column if not exists offline_mode boolean not null default true;
 alter table public.app_settings add column if not exists ai_model text not null default 'gpt-4o-mini';
+alter table public.app_settings add column if not exists formal_run smallint not null default 3;   -- 형식적 기록 의심 기준 칸 수(0 이면 끔)
+alter table public.app_settings drop constraint if exists app_settings_formal_run_check;
+alter table public.app_settings add constraint app_settings_formal_run_check check (formal_run between 0 and 62);
 
 -- ----------------------------------------------------------------------------
 -- 2. 함수 · 트리거 (search_path 고정)
@@ -223,7 +259,7 @@ do $trg$
 declare t text;
 begin
   foreach t in array array['app_settings','import_template','inspection','dim_spec','measurement',
-                           'drawing_pin','equipment','daily_check','check_limit']
+                           'drawing_pin','equipment','daily_check','check_limit','check_sheet']
   loop
     execute format('drop trigger if exists %I on public.%I', t || '_updated_at', t);
     execute format('create trigger %I before update on public.%I
@@ -245,12 +281,13 @@ alter table public.drawing_pin     enable row level security;
 alter table public.equipment       enable row level security;
 alter table public.daily_check     enable row level security;
 alter table public.check_limit     enable row level security;
+alter table public.check_sheet     enable row level security;
 
 -- 부모가 없는 표
 do $rls$
 declare t text;
 begin
-  foreach t in array array['app_settings','import_template','inspection','equipment','daily_check','check_limit']
+  foreach t in array array['app_settings','import_template','inspection','equipment','daily_check','check_limit','check_sheet']
   loop
     execute format('drop policy if exists %I on public.%I', t || '_select', t);
     execute format('drop policy if exists %I on public.%I', t || '_insert', t);
