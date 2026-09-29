@@ -231,7 +231,14 @@ begin
   perform public._assert_raises(format('insert into public.app_settings (owner_id) values (%L)', a),
     '23505', '설정은 사용자당 1행');
   perform public._assert_raises(format('insert into public.dim_spec (owner_id, inspection_id, line_no, no, type) values (%L, %s, 7, %L, %L)', a, v_i, '5', '곡률'),
-    '23514', '치수 종류는 선형·직경·반경·각도·깊이·위치(또는 빈칸)만');
+    '23514', '치수 종류는 선형·직경·반경·각도·깊이·위치·형상공차 10종(또는 빈칸)만');
+  -- 2026-09-29 메일 자료: 형상공차 종류·끼워맞춤·데이텀, 측정실 성적서 jsonb
+  insert into public.dim_spec (owner_id, inspection_id, line_no, no, type, nominal, tol_upper, tol_lower, fit, tol_src, datum)
+    values (a, v_i, 20, '20', '동심도', '0', '0.08', '0', '', '', 'A B'), (a, v_i, 21, '21', '직경', '145.8', '-0.014', '-0.039', 'g6', 'ISO 286 g6', '');
+  perform public._assert_eq((select count(*) from public.dim_spec where inspection_id = v_i and (type = '동심도' or fit = 'g6')), 2::bigint,
+    '형상공차(동심도)·끼워맞춤(g6)·공차 출처·데이텀을 받는다');
+  update public.inspection set lab_report = '{"file":"x.xlsx","parsed":{"blocks":[]}}'::jsonb where id = v_i;
+  perform public._assert_eq((select lab_report->>'file' from public.inspection where id = v_i), 'x.xlsx', '측정실 성적서 결과를 jsonb 로 둔다');
   perform public._assert_raises(format('insert into public.dim_spec (owner_id, inspection_id, line_no, no) values (%L, %s, 8, %L)', a, v_i, ' '),
     '23514', '빈 항목번호는 CHECK 가 막는다');
   perform public._assert_raises(format('insert into public.dim_spec (owner_id, inspection_id, line_no, no, decimals) values (%L, %s, 9, %L, 11)', a, v_i, '6'),

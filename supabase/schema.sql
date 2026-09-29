@@ -100,12 +100,16 @@ create table if not exists public.dim_spec (
   no             text not null check (length(btrim(no)) > 0),   -- 항목번호(풍선 번호)
   name           text not null default '',
   type           text not null default ''
-                 check (type in ('', '선형', '직경', '반경', '각도', '깊이', '위치')),
+                 check (type in ('', '선형', '직경', '반경', '각도', '깊이', '위치',
+                                 '동심도', '원통도', '진원도', '평면도', '위치도', '직각도', '평행도', '흔들림', '대칭도', '진직도')),
   nominal        text not null default '',                       -- 기준값
   tol_upper      text not null default '',                       -- 상한공차(+)
   tol_lower      text not null default '',                       -- 하한공차(-)
   unit           text not null default '',
   decimals       int check (decimals is null or decimals between 0 and 10), -- 소수점 자리수
+  fit            text not null default '',                       -- 끼워맞춤 등급(g6·f6·H7 …)
+  tol_src        text not null default '',                       -- 공차 출처('ISO 286 g6' = 표에서 채움 — 확인 필요)
+  datum          text not null default '',                       -- 형상·위치공차 데이텀(A B)
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),
   constraint dim_spec_insp_line_key unique (inspection_id, line_no)
@@ -242,6 +246,14 @@ alter table public.app_settings add column if not exists ai_model text not null 
 alter table public.app_settings add column if not exists formal_run smallint not null default 3;   -- 형식적 기록 의심 기준 칸 수(0 이면 끔)
 alter table public.app_settings drop constraint if exists app_settings_formal_run_check;
 alter table public.app_settings add constraint app_settings_formal_run_check check (formal_run between 0 and 62);
+-- 2026-09-29 메일 자료(과제 A): 형상·위치공차 종류, 끼워맞춤·공차 출처·데이텀, 측정실 성적서(보어별 판정 원자료)
+alter table public.dim_spec drop constraint if exists dim_spec_type_check;
+alter table public.dim_spec add constraint dim_spec_type_check check (type in ('', '선형', '직경', '반경', '각도', '깊이', '위치',
+  '동심도', '원통도', '진원도', '평면도', '위치도', '직각도', '평행도', '흔들림', '대칭도', '진직도'));
+alter table public.dim_spec add column if not exists fit     text not null default '';
+alter table public.dim_spec add column if not exists tol_src text not null default '';
+alter table public.dim_spec add column if not exists datum   text not null default '';
+alter table public.inspection add column if not exists lab_report jsonb;   -- 측정실 성적서 엑셀을 읽은 결과(파일 이름 + 보어 블록). 판정은 도구가 다시 계산
 
 -- ----------------------------------------------------------------------------
 -- 2. 함수 · 트리거 (search_path 고정)

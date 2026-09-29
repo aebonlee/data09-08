@@ -400,6 +400,140 @@ console.log('예시 파일로 짝 제안 끝까지 (samples/)');
   });
 }
 
+// ══ 2026-09-29 메일 자료(과제 A): CMM PDF(CALYPSO) · 측정실 성적서 · 도면 표기·끼워맞춤 ══
+console.log('각도 도·분·초');
+test('3° 11\' 5" → 11465초, 십진 3.1847…', () => { const d = L.parseDms('3° 11\' 5"'); assert.equal(d.sec, 11465); assert.equal(Math.round(d.deg * 1e6) / 1e6, 3.184722); });
+test('부호는 전체에: -0° 30\' 0" → -0.5', () => assert.equal(L.parseDms('-0° 30\' 0"').deg, -0.5));
+test('분만 있는 공차 -30\' → -0.5', () => assert.equal(L.parseDms("-30'").deg, -0.5));
+test('숫자만이면 null', () => assert.equal(L.parseDms('3.5'), null));
+
+// CALYPSO 칸 배치 글자 조각 — 실제 성적서의 좌표 모양(이름은 여러 조각, 숫자는 오른쪽 정렬, 2쪽째 머리 반복)
+function calItems() {
+  const it = [], add = (page, y, x, w, str) => it.push({ page, y, x, w, str });
+  const head = (page, y) => { add(page, y, 50.5, 24.5, 'Name'); add(page, y, 196.4, 67.5, 'Measured value'); add(page, y, 266.9, 57.6, 'Nominal value');
+    add(page, y, 335.4, 36, '상한공차'); add(page, y, 386.4, 36, '하한공차'); add(page, y, 469.9, 18, '편차'); add(page, y, 502, 10.7, '+/-'); };
+  const R = { m: 272, n: 323, u: 374, l: 425, d: 473.4, e: 564.3 };
+  const row = (page, y, names, vals) => {
+    let x = 50.5; names.forEach(s => { add(page, y, x, s.length * 6, s); x += s.length * 6 + (s.endsWith('_') ? 0 : 2.5); });
+    Object.keys(vals).forEach(k => { const s = vals[k]; const w = s.length * 4.5; add(page, y, R[k] - w, w, s); });
+  };
+  add(1, 106, 36.9, 46, 'Part name'); add(1, 106, 140.4, 60, 'TEST-0001');
+  add(1, 178.6, 36.9, 23.9, 'CMM'); add(1, 178.6, 63.5, 20, '타입'); add(1, 178.6, 140.5, 50, 'DEMO');
+  add(1, 190.7, 323.5, 94.5, 'No. measured values'); add(1, 190.7, 462.2, 5.6, '5');
+  add(1, 202.8, 323.5, 67.2, 'No. values: red'); add(1, 202.8, 462.3, 5.6, '2');
+  head(1, 244.4);
+  row(1, 263, ['캘리퍼', '거리1_X'], { m: '30.553 mm', n: '30.500', u: '0.100', l: '0.000', d: '0.053' });
+  row(1, 286, ['원5_', '직경'], { m: '22.018 mm', n: '22.000', u: '0.000', l: '-0.020', d: '0.018', e: '0.018' });
+  row(1, 309, ['원2_', '직경'], { m: '68.049 mm', n: '68.000', d: '0.049' });
+  add(1, 330, 31.2, 18, 'Text'); add(1, 332, 265, 25, 'Event'); add(1, 836.8, 272, 51, 'Page 1 of 2');
+  add(2, 37, 289, 41, 'Part name'); add(2, 37, 364, 58, 'TEST-0001');
+  head(2, 111.4);
+  add(2, 130, 28.3, 63.9, 'Section View A'); add(2, 130, 92.4, 9.5, '-A');
+  row(2, 153, ['원추', '반각1'], { m: '3° 11\' 5"', n: '3° 30\' 0"', u: '0° 0\' 0"', l: '-0° 30\' 0"', d: '-0° 18\' 55"' });
+  row(2, 176, ['대칭', '점1'], { m: '6.037 mm', n: '6.000', u: '0.015', l: '-0.015', d: '0.037', e: '0.022' });
+  return it.sort(() => 0.5 - Math.random());   // 조각 순서가 섞여 와도 위치로 읽어야 합니다
+}
+console.log('CMM PDF 성적서(CALYPSO 칸 배치) 읽기');
+{
+  const P = L.parseCalypso(calItems()), C = L.checkCalypso(P);
+  test('머리: Part name·CMM 타입(두 조각)·red·측정 수', () => { assert.equal(P.header['Part name'], 'TEST-0001'); assert.equal(P.header['CMM 타입'], 'DEMO'); assert.equal(P.red, 2); assert.equal(P.measured_count, 5); });
+  test('2쪽에 걸친 5줄, 2쪽 머리 반복은 줄로 안 읽음', () => assert.deepEqual(C.rows.map(r => r.name), ['캘리퍼 거리1_X', '원5_직경', '원2_직경', '원추 반각1', '대칭 점1']));
+  test('칸은 위치로: 원5_직경 상한 0.000 / 하한 -0.020 / +/- 0.018', () => { const r = P.rows[1]; assert.equal(r.upper, '0.000'); assert.equal(r.lower, '-0.020'); assert.equal(r.exceed, '0.018'); });
+  test('공차 칸이 빈 줄은 목록에 두고 판정 제외', () => { assert.equal(C.rows[2].status, 'SKIP'); assert.equal(C.rows[2].skip, 'no_tol'); });
+  test('구역 제목 Section View A-A 는 줄이 아니라 구역', () => { assert.deepEqual(P.sections.map(s => s.title), ['Section View A-A']); assert.equal(C.rows[3].section, 'Section View A-A'); });
+  test('각도: 3°11\'5" vs 3°30\' (0 / -30\') → OK, 편차 -18\'55"', () => { assert.equal(C.rows[3].status, 'OK'); assert.equal(Math.round(C.rows[3].deviation * 3600), -1135); });
+  test('NOK 2 = 성적서 red 2 → 경고 없음', () => { assert.equal(C.counts.NOK, 2); assert.equal(C.red_match, true); assert.deepEqual(C.warnings, []); });
+  test('red 가 다르면 경고', () => { const Q = Object.assign({}, P, { red: 3 }); assert.ok(L.checkCalypso(Q).warnings.some(w => /red 3/.test(w))); });
+  test('측정결과로 옮기기: 공차 없는 줄도 기준값과 함께, 각도는 deg', () => {
+    const m = L.calypsoToMeas(C); assert.equal(m.length, 5);
+    const a = m.find(x => /원추/.test(x.name)); assert.equal(a.unit, 'deg'); assert.equal(a.nominal, 3.5); assert.equal(a.tol_lower, -0.5);
+    assert.equal(m.find(x => /원2_/.test(x.name)).tol_upper, undefined);
+  });
+  test('경계값은 OK: 편차 = 상한', () => assert.equal(L.judgeCalypsoRow({ name: 'x', measured: '10.100 mm', nominal: '10.000', upper: '0.100', lower: '-0.100' }).status, 'OK'));
+  test('상·하한 0/0 흔들림 0.174 → NOK', () => assert.equal(L.judgeCalypsoRow({ name: 'x', measured: '0.174 mm', nominal: '0.000', upper: '0.000', lower: '0.000' }).status, 'NOK'));
+  test('기준값 없는 요약 줄(위치도1 0.138 mm) → 판정 제외', () => assert.equal(L.judgeCalypsoRow({ name: '위치도1', measured: '0.138 mm' }).skip, 'no_nominal'));
+  test('붙어 온 값 조각(간격=띄어쓰기 폭)도 칸으로 나눔', () => {
+    const ln = L.itemsToLines([{ str: '0° 15\' 0" -0° 15\' 0"', x: 329, y: 1, w: 91, page: 1 }])[0];
+    assert.deepEqual(ln.phrases.map(p => p.text), ['0° 15\' 0"', '-0° 15\' 0"']);
+  });
+}
+
+console.log('예시 CMM PDF(samples, vendor pdf.js 로 실제로 읽기)');
+{
+  const fs = await import('node:fs');
+  const warn = console.warn; console.warn = () => {};   // Node 에 canvas 가 없다는 pdf.js 안내는 숨김(그리기는 안 씀)
+  globalThis.pdfjsWorker = require('../vendor/pdfjs/pdf.worker.min.js');
+  const pdfjs = require('../vendor/pdfjs/pdf.min.js');
+  console.warn = warn;
+  const data = new Uint8Array(fs.readFileSync(new URL('../samples/예시데이터_CMM성적서_CALYPSO형식.pdf', import.meta.url)));
+  const doc = await pdfjs.getDocument({ data, isEvalSupported: false, disableFontFace: true }).promise;
+  let items = [];
+  for (let p = 1; p <= doc.numPages; p++) { const pg = await doc.getPage(p); const vp = pg.getViewport({ scale: 1 }); items = items.concat(L.pdfTextItems(await pg.getTextContent(), p, vp.height)); }
+  const P = L.parseCalypso(items), C = L.checkCalypso(P);
+  test('가상 품번 999999-00001, 2쪽, 10줄 = No. measured values', () => { assert.equal(P.header['Part name'], '999999-00001'); assert.equal(P.pages, 2); assert.equal(C.rows.length, 10); assert.equal(C.count_match, true); });
+  test('NOK 2(원1_직경·위치도1) = red 2', () => { assert.deepEqual(C.rows.filter(r => r.status === 'NOK').map(r => r.name), ['원1_직경', '위치도1']); assert.equal(C.red_match, true); });
+  test('각도 줄 OK, 공차 없는 원2_직경 판정 제외, 2쪽 구역 Section View B-B', () => {
+    assert.equal(C.rows.find(r => /원추/.test(r.name)).status, 'OK'); assert.equal(C.rows.find(r => r.name === '원2_직경').status, 'SKIP');
+    assert.equal(C.rows.find(r => r.name === '원3_직경').section, 'Section View B-B');
+  });
+  // 도면 표기(가상 도면 samples/예시데이터_도면_번호없음.svg) → 번호 풍선 1~10 → 짝 제안
+  const DRW = ['Ø50 -0.025/-0.050', '◎Ø0.05 A', '120 0/-0.2', 'Ø32 H7', '⌭0.01', '5° ±15\'', 'Ø20', '⌖Ø0.1 A B', 'Ø40 g6', '⏥0.02'];
+  const spec = DRW.map((t, i) => Object.assign({ no: String(i + 1), name: '', decimals: '' }, L.parseDimText(t)));
+  const meas = L.calypsoToMeas(C).map(m => Object.assign(m, { source: 'CMM' }));
+  const sug = L.suggestMatches({ spec, meas }, {});
+  test('예시 PDF 10줄이 도면 풍선 1~10 과 순서대로 짝(끼워맞춤 H7·g6 은 ISO 표 값으로)', () => assert.deepEqual(sug.map(s => s.no), ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']));
+  test('공차가 있는 줄은 신뢰도 높음, 공차 없는 원2_직경은 기준값만 같아 보통', () => {
+    assert.ok(sug.filter((s, i) => i !== 6).every(s => s.level === 'high'), sug.map(s => s.level).join());
+    assert.equal(sug[6].level, 'mid');
+  });
+}
+
+console.log('측정실 성적서 엑셀(보어별)');
+{
+  const fs = await import('node:fs');
+  const XLSX = require('../vendor/xlsx.full.min.js');
+  test('표준치 「Ø28.186\\n[+0.005/0]」', () => assert.deepEqual(L.parseStdText('Ø28.186\n[+0.005/0]'), { nominal: 28.186, upper: 0.005, lower: 0, dia: true }));
+  test('숫자 칸 0.004 는 한계값', () => assert.equal(L.parseStdText(0.004).limit, 0.004));
+  const wb = XLSX.read(fs.readFileSync(new URL('../samples/예시데이터_측정실성적서_보어.xlsx', import.meta.url)), { type: 'buffer' });
+  const P = L.parseLabReport(wb.SheetNames.map(n => ({ name: n, rows: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' }) })));
+  const M = L.labMatrix(P);
+  test('보어 4개 × 항목 4개(내경·진원도·원통도·진직도)', () => { assert.deepEqual(M.bores, ['H1', 'H2', 'H3', 'H4']); assert.deepEqual(M.items, ['내경', '진원도', '원통도', '진직도']); });
+  test('NOK 3칸: H2 원통도 0.0095 · H3 진원도 0.0045(위치 30.5) · H4 내경 20.0068', () => assert.deepEqual(M.nok.map(n => [n.bore, n.item, n.value, n.pos]),
+    [['H2', '원통도', 0.0095, null], ['H3', '진원도', 0.0045, 30.5], ['H4', '내경', 20.0068, 55]]));
+  test('항목명 오기: H4 마지막 줄 「진원도」 → 「진직도」 자리로 표시·확인필요', () => {
+    assert.equal(P.anomalies.length, 1); assert.equal(P.anomalies[0].bore, 'H4'); assert.equal(P.anomalies[0].expected, '진직도');
+    assert.equal(M.cells['H4|진직도'].status, 'CHECK'); assert.ok(M.cells['H4|진직도'].flags[0].indexOf('항목명 확인') === 0);
+  });
+  test('여유량: H1 원통도 0.0061 → 한계 0.008 까지 0.0019', () => assert.equal(M.cells['H1|원통도'].margin, 0.0019));
+  test('경계값 = 한계는 OK', () => { const Q = { blocks: [{ bore: 'X', lines: [{ label: '진직도', std: L.parseStdText(0.004), values: [{ pos: null, value: 0.004 }] }] }] }; assert.equal(L.labMatrix(Q).cells['X|진직도'].status, 'OK'); });
+}
+
+console.log('도면 표기·끼워맞춤');
+test('ISO 286: Ø145.8 g6 → -0.014/-0.039', () => { const f = L.isoFit(145.8, 'g6'); assert.equal(f.upper, -0.014); assert.equal(f.lower, -0.039); });
+test('ISO 286: Ø144.5 f6 → -0.043/-0.068', () => { const f = L.isoFit(144.5, 'f6'); assert.equal(f.upper, -0.043); assert.equal(f.lower, -0.068); });
+test('ISO 286: Ø32 H7 → +0.025/0, 구간 경계 Ø30 g6 → 18~30 구간 -0.007/-0.020', () => { assert.deepEqual([L.isoFit(32, 'H7').upper, L.isoFit(32, 'H7').lower], [0.025, 0]); assert.deepEqual([L.isoFit(30, 'g6').upper, L.isoFit(30, 'g6').lower], [-0.007, -0.02]); });
+test('표에 없는 등급(k6)은 null — 직접 입력', () => assert.equal(L.isoFit(50, 'k6'), null));
+test('표기: Ø155.4 -0.05/-0.15', () => { const d = L.parseDimText('Ø155.4 -0.05/-0.15'); assert.deepEqual([d.type, d.nominal, d.tol_upper, d.tol_lower], ['직경', 155.4, -0.05, -0.15]); });
+test('표기: ◎Ø0.08 A B → 동심도 0 / +0.08, 데이텀 A B', () => { const d = L.parseDimText('◎Ø0.08 A B'); assert.deepEqual([d.type, d.nominal, d.tol_upper, d.tol_lower, d.datum], ['동심도', 0, 0.08, 0, 'A B']); });
+test('표기: 3.5° 0/-30\' → 각도 3.5, 0 / -0.5', () => { const d = L.parseDimText('3.5° 0/-30\''); assert.deepEqual([d.type, d.unit, d.nominal, d.tol_upper, d.tol_lower], ['각도', 'deg', 3.5, 0, -0.5]); });
+test('표기: Ø145.8 g6 → 끼워맞춤 g6, 공차는 ISO 표 값 + 출처', () => { const d = L.parseDimText('Ø145.8 g6'); assert.equal(d.fit, 'g6'); assert.equal(d.tol_src, 'ISO 286 g6'); });
+test('형상공차는 종류가 다르면 짝 아님: ◎0.02 ≠ 축 방향 흔들림 0.02', () => {
+  const spec = [Object.assign({ no: '1' }, L.parseDimText('◎Ø0.02 A'))];
+  const s = L.suggestMatches({ spec, meas: [{ no: '', name: '축 방향 원주 흔들림1', value: 0.002, nominal: 0, tol_upper: 0.02, tol_lower: 0, source: 'CMM' }] }, {});
+  assert.equal(s[0].no, null);
+});
+test('앞 측정이 뒤 측정의 정확한 짝을 가로채지 않음(동심도 0.03 이 0.025 칸을 차지하지 않음)', () => {
+  const spec = [Object.assign({ no: '1' }, L.parseDimText('◎Ø0.025 A B'))];
+  const meas = [{ no: '', name: '동심도_B', value: 0.004, nominal: 0, tol_upper: 0.03, tol_lower: 0, source: 'CMM' }, { no: '', name: '동심도_C', value: 0.004, nominal: 0, tol_upper: 0.025, tol_lower: 0, source: 'CMM' }];
+  const s = L.suggestMatches({ spec, meas }, {});
+  assert.equal(s[1].no, '1'); assert.equal(s[1].level, 'high'); assert.notEqual(s[0].level, 'high');
+});
+test('기준표 공차가 비고 끼워맞춤만 있으면 공차 방향으로 확인(f6 ↔ -0.043/-0.068)', () => {
+  const spec = [{ no: '1', name: '', type: '직경', nominal: 144.5, tol_upper: '', tol_lower: '', fit: 'f6' }, { no: '2', name: '', type: '직경', nominal: 144.5, tol_upper: 0.1, tol_lower: -0.1 }];
+  const s = L.suggestMatches({ spec, meas: [{ no: '', name: 'B_직경', value: 144.45, nominal: 144.5, tol_upper: -0.043, tol_lower: -0.068, source: 'CMM' }] }, {});
+  assert.equal(s[0].no, '1'); assert.ok(s[0].why.indexOf('fit_need') >= 0);
+});
+
 console.log('폐쇄망 — 외부로 나가는 요청 코드 검사');
 {
   const fs = await import('node:fs');
@@ -407,6 +541,9 @@ console.log('폐쇄망 — 외부로 나가는 요청 코드 검사');
   const { fileURLToPath } = await import('node:url');
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const files = ['index.html', 'css/style.css', 'vendor/xlsx.full.min.js'].concat(fs.readdirSync(path.join(root, 'js')).map(f => 'js/' + f));
+  // vendor/pdfjs 는 주소(url)로 PDF 를 받거나 글꼴표(cMapUrl·standardFontDataUrl)를 받을 때만 fetch 를 씁니다.
+  // 이 도구는 파일 바이트(data)만 넘기고 그 두 옵션을 주지 않으므로 그 길을 타지 않습니다 — 아래에서 호출부를 검사합니다.
+  const appText = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   // 네트워크로 나가는 브라우저 API·외부 자원 불러오기
   const NET = /\bfetch\s*\(|XMLHttpRequest|new\s+WebSocket|EventSource|sendBeacon|importScripts|<script[^>]+src=["']?https?:|<link[^>]+href=["']?https?:|@import|url\(\s*["']?https?:|\.src\s*=\s*["']https?:/g;
   const hits = [];
@@ -417,6 +554,13 @@ console.log('폐쇄망 — 외부로 나가는 요청 코드 검사');
   });
   test('네트워크 요청 코드는 js/ai.js 의 fetch 한 곳뿐(AI 읽기, 폐쇄망 모드에서 막힘)', () => {
     assert.deepEqual(hits, ['js/ai.js: fetch(']);
+  });
+  test('PDF 는 바이트로만 연다(getDocument({ data }), url·cMapUrl·standardFontDataUrl 없음)', () => {
+    const calls = appText.match(/getDocument\(\{[^}]*\}/g) || [];
+    assert.ok(calls.length >= 1);
+    calls.forEach(c => { assert.ok(/data:/.test(c), c); assert.ok(!/url|cMap|standardFont/i.test(c), c); });
+    assert.ok(!/cMapUrl|standardFontDataUrl/.test(appText));
+    assert.ok(/'vendor\/pdfjs\/pdf\.min\.js'/.test(appText), 'pdf.js 는 vendor 에서');
   });
   test('ai.js 는 폐쇄망 모드가 꺼져 있을 때만 요청(가드 문구 존재)', () => {
     const t = fs.readFileSync(path.join(root, 'js/ai.js'), 'utf8');

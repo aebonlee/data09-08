@@ -252,3 +252,16 @@ td.gc.g-unsure .gmark, td.gc.g-unsure .gnum { outline: 2px dashed var(--check); 
   table.grid-table th.gitem { min-width: 118px; max-width: 140px; font-size: .78rem; padding: 4px 6px; }
   table.grid-table th.gitem small { font-size: .7rem; }
 }
+
+/* 2026-09-29 메일 자료(과제 A): 판정 제외 배지 · 측정실 성적서 행렬 */
+.st-SKIP { background: #e3e7ec; color: #3b4552; }
+table.lab-matrix td.lab-cell { min-width: 9em; white-space: nowrap; }
+table.lab-matrix td.lab-OK { background: var(--ok-bg); }
+table.lab-matrix td.lab-OK b { color: var(--ok); }
+table.lab-matrix td.lab-NOK { background: var(--nok-bg); }
+table.lab-matrix td.lab-NOK b { color: var(--nok); }
+table.lab-matrix td.lab-CHECK { background: var(--check-bg); }
+table.lab-matrix td.lab-CHECK b { color: var(--check-ink); }
+table.lab-matrix td .flag { color: #7a1c14; font-weight: 600; }
+table.lab-matrix th[scope="row"] { background: #eef1f5; }
+.dialog:has(.table-wrap table) { width: min(1040px, calc(100vw - 32px)); }

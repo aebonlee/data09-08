@@ -462,7 +462,7 @@
 
   // ── 치수 기준표 ─────────────────────────────────────────────
   var SPEC_COLS = [['no', '항목번호', 'nowrap'], ['name', '항목명', 'wide'], ['type', '치수 종류'], ['nominal', '기준값'],
-    ['tol_upper', '상한공차(+)'], ['tol_lower', '하한공차(-)'], ['unit', '단위'], ['decimals', '자리수']];
+    ['tol_upper', '상한공차(+)'], ['tol_lower', '하한공차(-)'], ['fit', '끼워맞춤(g6 등)'], ['unit', '단위'], ['decimals', '자리수']];
   function viewSpec() {
     var it = needCase('치수 기준표'); if (!it) return;
     main.appendChild(pageHead('치수 기준표'));
@@ -499,7 +499,16 @@
             if (s.type && L.DIM_TYPES.indexOf(s.type) < 0) ctl.appendChild(h('option', { value: s.type }, s.type));
             ctl.value = s.type || '';
           } else ctl = h('input', { type: 'text', inputmode: /nominal|tol|decimals/.test(c[0]) ? 'decimal' : null, value: fmtNum(s[c[0]]), 'aria-label': c[1] + ' ' + (i + 1) + '행' });
-          ctl.addEventListener('change', function () { s[c[0]] = ctl.value.trim(); save(); updRange(); });
+          ctl.addEventListener('change', function () {
+            s[c[0]] = ctl.value.trim();
+            // 끼워맞춤 등급을 적고 공차가 비어 있으면 ISO 286 표 값으로 채웁니다(표에 있는 f·g·h / F·G·H, IT5~8, 500mm 이하만)
+            if (c[0] === 'fit' && s.fit && s.tol_upper === '' && s.tol_lower === '') {
+              var iso = L.isoFit(s.nominal, s.fit);
+              if (iso) { s.tol_upper = iso.upper; s.tol_lower = iso.lower; s.tol_src = iso.source; save(); toast(s.no + '번 공차를 ' + iso.source + ' 표 값(' + iso.upper + '/' + iso.lower + ')으로 채웠습니다. 도면·규격과 맞는지 확인해 주십시오.'); render(); return; }
+              toast(s.fit + ' 은(는) 이 도구의 표에 없는 등급·크기입니다. 공차를 직접 넣어 주십시오.', true);
+            }
+            save(); updRange();
+          });
           return h('td', { class: c[2] || null }, ctl);
         }), rangeCell, h('td', null, h('button', { class: 'btn btn-small', type: 'button', 'aria-label': (i + 1) + '행 지우기', onclick: function () { it.spec.splice(i, 1); save(); render(); } }, '지우기')));
       })));
@@ -537,8 +546,11 @@
       h('div', { class: 'btn-row' },
         fileButton('CMM 파일 고르기(xlsx·csv)', '.xlsx,.xls,.csv,.tsv,.txt', function (file) { readTableFile(file, function (rows, nm) { mappingDialog('meas', rows, nm, function (o) { addMeas(o, 'CMM'); }); }); }),
         h('button', { class: 'btn', type: 'button', onclick: function () { pasteDialog('meas', 'CMM 결과 붙여넣기', 'Point\tFeature\tActual\tUnit\n1\tLENGTH\t100.12\tmm', function (o) { addMeas(o, 'CMM'); }); } }, 'CMM 결과 붙여넣기'),
-        h('button', { class: 'btn', type: 'button', onclick: function () { pdfPasteDialog(function (o) { addMeas(o, 'CMM'); }); } }, 'PDF 성적서 글자 붙여넣기'))));
+        fileButton('CMM PDF 바로 읽기(ZEISS CALYPSO)', '.pdf,application/pdf', function (file) { cmmPdfRead(file, addMeas); }),
+        h('button', { class: 'btn', type: 'button', onclick: function () { pdfPasteDialog(function (o) { addMeas(o, 'CMM'); }); } }, 'PDF 성적서 글자 붙여넣기')),
+      h('p', { class: 'note' }, 'CALYPSO PDF 성적서는 파일을 고르면 바로 읽어 판정하고, 성적서에 적힌 불합격 수(No. values: red)와 맞대 봅니다. 다른 장비의 PDF 는 「PDF 성적서 글자 붙여넣기」를 쓰십시오.')));
     main.appendChild(matchCard(it));
+    main.appendChild(labCard(it));
 
     main.appendChild(handPhotoCard(it, addMeas));
 
@@ -598,6 +610,156 @@
           setTimeout(function () { mappingDialog('meas', rows, 'PDF 붙여넣기', onDone); }, 0);
         }
       }]);
+  }
+
+  // ── PDF 읽기(pdf.js, vendor/pdfjs) ───────────────────────────
+  // 처음 필요할 때만 불러옵니다. file:// 에서는 브라우저가 Worker 를 막으므로 worker 스크립트를 일반 스크립트로 먼저 넣어
+  // pdf.js 가 화면 스레드에서 돌게 합니다(pdfjsWorker 전역). 파일은 바이트로만 넘기고 주소·글꼴표 경로는 주지 않아 밖으로 요청이 나가지 않습니다.
+  var pdfLoading = null;
+  function withPdf(cb) {
+    if (window.pdfjsLib && window.pdfjsWorker) { cb(window.pdfjsLib); return; }
+    if (!pdfLoading) {
+      pdfLoading = [];
+      var add = function (src, next) {
+        var s = document.createElement('script'); s.src = src;
+        s.onload = next; s.onerror = function () { toast('PDF 읽기 도구(vendor/pdfjs)를 불러오지 못했습니다. 폴더째 받았는지 확인해 주십시오.', true); pdfLoading = null; };
+        document.head.appendChild(s);
+      };
+      add('vendor/pdfjs/pdf.worker.min.js', function () {
+        add('vendor/pdfjs/pdf.min.js', function () {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs/pdf.worker.min.js';
+          var q = pdfLoading; pdfLoading = null; q.forEach(function (f) { f(window.pdfjsLib); });
+        });
+      });
+    }
+    pdfLoading.push(cb);
+  }
+  function openPdf(file, cb) {
+    var r = new FileReader();
+    r.onerror = function () { toast('파일을 읽지 못했습니다.', true); };
+    r.onload = function () {
+      withPdf(function (lib) {
+        lib.getDocument({ data: new Uint8Array(r.result), isEvalSupported: false, disableFontFace: true }).promise
+          .then(cb, function (e) { toast('PDF 를 열지 못했습니다: ' + e.message, true); });
+      });
+    };
+    r.readAsArrayBuffer(file);
+  }
+  function pdfItems(doc) {
+    var all = [], p = Promise.resolve();
+    for (var i = 1; i <= doc.numPages; i++) (function (n) {
+      p = p.then(function () { return doc.getPage(n); }).then(function (pg) {
+        var vp = pg.getViewport({ scale: 1 });
+        return pg.getTextContent().then(function (tc) { all = all.concat(L.pdfTextItems(tc, n, vp.height)); });
+      });
+    })(i);
+    return p.then(function () { return all; });
+  }
+
+  // CMM PDF 성적서(ZEISS CALYPSO) 바로 읽기 → 판정 미리보기 → 측정결과로 넣기
+  function cmmPdfRead(file, addMeas) {
+    openPdf(file, function (doc) {
+      pdfItems(doc).then(function (items) {
+        if (!items.length) { toast('이 PDF 에는 글자 층이 없습니다(스캔·그림 PDF). 「수기 측정표 사진으로 등록」으로 옮겨 적어 주십시오.', true); return; }
+        var parsed = L.parseCalypso(items);
+        if (!parsed.rows.length) { toast('측정표 머리글(Name · Measured value · Nominal value)을 찾지 못했습니다. 「PDF 성적서 글자 붙여넣기」로 넣어 주십시오.', true); return; }
+        calypsoDialog(file.name, parsed, L.checkCalypso(parsed), addMeas);
+      });
+    });
+  }
+  function statusBadge(st, skip) {
+    if (st === 'SKIP') return h('span', { class: 'st st-SKIP' }, '판정 제외');
+    return badge(st);
+  }
+  function calypsoDialog(fileName, parsed, ck, addMeas) {
+    var hd = parsed.header;
+    var c = ck.counts;
+    var body = [
+      h('dl', { class: 'detail-kv' },
+        ['Part name', 'Time/Date', 'CMM 타입', 'CMM No.', 'Operator', 'Part ident', 'No. measured values', 'No. values: red', '측정 시간'].map(function (k) {
+          return [h('dt', null, k), h('dd', null, hd[k] == null || hd[k] === '' ? '-' : hd[k])];
+        })),
+      h('div', { class: 'tiles', style: 'margin-top:12px' },
+        h('div', { class: 'tile OK' }, h('b', null, String(c.OK)), h('span', null, 'OK')),
+        h('div', { class: 'tile NOK' }, h('b', null, String(c.NOK)), h('span', null, 'NOK (성적서 red ' + (parsed.red == null ? '?' : parsed.red) + ')')),
+        h('div', { class: 'tile CHECK' }, h('b', null, String(c.CHECK)), h('span', null, '확인 필요')),
+        h('div', { class: 'tile' }, h('b', null, String(c.SKIP)), h('span', null, '판정 제외(공차·기준값 없음)'))),
+      ck.red_match && ck.count_match && !ck.warnings.length
+        ? h('p', { class: 'alert info' }, '성적서 자체 숫자와 맞습니다: 불합격 ' + c.NOK + '개 = No. values: red ' + parsed.red + ' · 측정 ' + ck.rows.length + '줄 = No. measured values ' + (parsed.measured_count == null ? '?' : parsed.measured_count) + '.')
+        : h('div', { class: 'alert warn' }, h('b', null, '성적서와 맞지 않는 곳이 있습니다'), h('ul', null, ck.warnings.map(function (w) { return h('li', null, w); }))),
+      h('p', { class: 'note' }, fileName + ' · ' + parsed.pages + '쪽' + (parsed.sections.length ? ' · 구역: ' + parsed.sections.map(function (s) { return s.title; }).join(', ') : '') +
+        '. 각도는 도·분·초 그대로 보이고 판정은 초 단위로 계산합니다. 공차 칸이 빈 줄은 목록에 두되 판정하지 않습니다.'),
+      h('div', { class: 'table-wrap' }, h('table', { class: 'list' },
+        h('thead', null, h('tr', null, ['항목', '측정값', '기준값', '상한공차', '하한공차', '편차', '판정', '성적서 +/-'].map(function (x) { return h('th', null, x); }))),
+        h('tbody', null, ck.rows.map(function (r, i) {
+          var sec = r.section && (i === 0 || ck.rows[i - 1].section !== r.section) ? h('tr', null, h('td', { colspan: '8' }, h('b', null, r.section))) : null;
+          return [sec, h('tr', { class: r.status === 'NOK' ? 'row-NOK' : r.status === 'CHECK' ? 'row-CHECK' : null },
+            h('td', null, r.name), h('td', { class: 'num' }, r.measured), h('td', { class: 'num' }, r.nominal), h('td', { class: 'num' }, r.upper), h('td', { class: 'num' }, r.lower),
+            h('td', { class: 'num' }, r.dev_text), h('td', { class: 'nowrap' }, statusBadge(r.status), r.skip ? h('span', { class: 'sub' }, L.CAL_SKIP[r.skip]) : null),
+            h('td', { class: 'num' }, r.exceed_text || ''))];
+        }))))
+    ];
+    var meas = L.calypsoToMeas(ck);
+    dialog('CMM PDF 성적서 읽기 — ' + (hd['Part name'] || fileName), body, [
+      { label: '닫기' },
+      { label: '판정표 CSV', onClick: function () {
+        downloadCsv(prefix() + 'CMM_PDF판정_' + safeName(hd['Part name'] || fileName) + '_' + stamp() + '.csv',
+          [['구역', '항목', '측정값', '기준값', '상한공차', '하한공차', '편차', '판정', '사유', '성적서 +/-']].concat(ck.rows.map(function (r) {
+            return [r.section, r.name, r.measured, r.nominal, r.upper, r.lower, r.dev_text, r.status === 'SKIP' ? '판정 제외' : L.STATUS_LABEL[r.status], r.skip ? L.CAL_SKIP[r.skip] : '', r.exceed_text];
+          })));
+        return false;
+      } },
+      { label: '측정결과로 넣기(' + meas.length + '줄)', primary: true, onClick: function () { setTimeout(function () { addMeas(meas, 'CMM'); }, 0); } }
+    ]);
+  }
+
+  // 측정실 성적서 엑셀(보어별 내경·진원도·원통도·진직도) → 보어 × 항목 판정표
+  function labCard(it) {
+    var card = h('div', { class: 'card', id: 'labCard' }, h('h2', null, '측정실 성적서 엑셀 읽기(보어별 내경·형상공차)'),
+      h('p', null, '측정실 성적서(구분 | 항목 | 측정위치 | 측정값 …, 표준치 「Ø28.186 [+0.005/0]」)를 고르면 모든 시트를 읽어 보어마다 내경을 기준·공차로, 진원도·원통도·진직도를 한계값으로 판정합니다.'),
+      h('div', { class: 'btn-row' },
+        fileButton(it.lab ? '다른 성적서 고르기' : '성적서 엑셀 고르기(xlsx)', '.xlsx,.xls', function (file) {
+          var r = new FileReader();
+          r.onload = function () {
+            try {
+              var wb = XLSX.read(new Uint8Array(r.result), { type: 'array' });
+              var sheets = wb.SheetNames.map(function (n) { return { name: n, rows: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' }) }; });
+              var p = L.parseLabReport(sheets);
+              if (!p.blocks.length) { toast('보어 블록(구분·항목 머리글 아래 내경 줄)을 찾지 못했습니다.', true); return; }
+              it.lab = { file: file.name, parsed: p }; save(); render();
+            } catch (e) { toast('엑셀을 읽지 못했습니다: ' + e.message, true); }
+          };
+          r.readAsArrayBuffer(file);
+        }),
+        it.lab ? h('button', { class: 'btn', type: 'button', onclick: function () { it.lab = null; save(); render(); } }, '성적서 닫기') : null));
+    if (!it.lab) return card;
+    var p = it.lab.parsed, M = L.labMatrix(p);
+    append(card, h('p', { class: 'note' }, it.lab.file + (p.part ? ' · 품명 ' + p.part : '') + ' · 보어 ' + M.bores.length + '개 · 칸 ' + (M.counts.OK + M.counts.NOK + M.counts.CHECK) + '개 (OK ' + M.counts.OK + ' / NOK ' + M.counts.NOK + ' / 확인 ' + M.counts.CHECK + ')'));
+    if (p.anomalies.length) append(card, h('div', { class: 'alert warn' }, h('b', null, '항목명 확인'), h('ul', null, p.anomalies.map(function (a) { return h('li', null, a.text + ' — 판정은 적힌 한계값으로 했고, 표에서는 「' + a.expected + '」 칸에 표시했습니다.'); }))));
+    append(card, h('div', { class: 'table-wrap' }, h('table', { class: 'list lab-matrix' },
+      h('thead', null, h('tr', null, h('th', null, '보어'), M.items.map(function (i) { var any = M.bores.map(function (b) { return M.cells[b + '|' + i]; }).filter(Boolean)[0]; return h('th', null, i, any && any.limit_text ? h('span', { class: 'sub' }, any.limit_text) : null); }))),
+      h('tbody', null, M.bores.map(function (b) {
+        return h('tr', null, h('th', { scope: 'row' }, b), M.items.map(function (i) {
+          var c = M.cells[b + '|' + i];
+          if (!c) return h('td', { class: 'lab-cell' }, '-');
+          return h('td', { class: 'lab-cell lab-' + c.status },
+            h('b', null, L.STATUS_LABEL[c.status]), ' ', c.worst ? String(c.worst.value) : '',
+            h('span', { class: 'sub' }, c.margin == null ? '' : (c.margin < 0 ? '초과 ' + (-c.margin) : '여유 ' + c.margin) + (c.worst && c.worst.pos != null ? ' · 위치 ' + c.worst.pos : '')),
+            c.flags.length ? h('span', { class: 'sub flag' }, c.flags.join(' · ')) : null);
+        }));
+      })))));
+    append(card, h('p', { class: 'note' }, '칸마다 가장 나쁜 값(한계에 가장 가깝거나 넘은 값)과 여유/초과량입니다. 여러 위치를 잰 내경·진원도는 모든 위치를 판정합니다.'),
+      M.nok.length ? h('details', null, h('summary', null, 'NOK ' + M.nok.length + '건 자세히'), h('ul', null, M.nok.map(function (n) {
+        return h('li', null, n.bore + ' ' + n.item + (n.pos != null ? ' (위치 ' + n.pos + ')' : '') + ': ' + n.value + ' — 한계 ' + n.limit + ', 초과 ' + n.over + (n.flags.length ? ' · ' + n.flags.join(' · ') : ''));
+      }))) : null,
+      h('div', { class: 'btn-row', style: 'margin-top:10px' }, h('button', {
+        class: 'btn', type: 'button', onclick: function () {
+          var rows = [['보어', '항목', '측정위치', '측정값', '한계', '판정', '여유(-는 초과)', '확인']];
+          M.bores.forEach(function (b) { M.items.forEach(function (i) { var c = M.cells[b + '|' + i]; if (c) c.values.forEach(function (v) { rows.push([b, i, v.pos == null ? '' : v.pos, v.value, c.limit_text, L.STATUS_LABEL[v.status], v.margin == null ? '' : v.margin, c.flags.join(' · ')]); }); }); });
+          downloadCsv(prefix() + '측정실성적서_판정_' + stamp() + '.csv', rows);
+        }
+      }, '판정 CSV 내려받기')));
+    return card;
   }
 
   // 번호 없는 측정 ↔ 도면 항목 짝 맞추기 (logic.js suggestMatches)
@@ -780,7 +942,26 @@
   function imageOf(id) { return memImages[id] || S.getImage(id); }
   function loadDrawing(it, file) {
     var name = file.name.toLowerCase();
-    if (/\.pdf$/.test(name)) { toast('PDF 는 1단계에서 바로 읽지 않습니다. 도면을 PNG·JPG 로 저장해 올려 주십시오.', true); return; }
+    if (/\.pdf$/.test(name)) {
+      // PDF 도면: 첫 쪽을 그림으로 그려 올립니다(긴 변 2400px). CATIA 도면처럼 글자가 선으로만 된 PDF 도 그림은 그대로 나옵니다.
+      openPdf(file, function (doc) {
+        doc.getPage(1).then(function (pg) {
+          var vp1 = pg.getViewport({ scale: 1 });
+          var k = 2400 / Math.max(vp1.width, vp1.height);
+          var vp = pg.getViewport({ scale: k });
+          var c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+          var g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+          return pg.render({ canvasContext: g, viewport: vp }).promise.then(function () {
+            return pg.getTextContent().then(function (tc) {
+              var n = tc.items.filter(function (x) { return x.str && x.str.trim(); }).length;
+              store(c.toDataURL('image/jpeg', 0.85));
+              toast(n ? 'PDF 도면 첫 쪽을 올렸습니다(글자 ' + n + '개 있음).' : 'PDF 도면 첫 쪽을 올렸습니다. 이 도면은 글자 층이 없어(선으로 그린 치수) 치수를 자동으로 읽을 수 없습니다 — 번호 풍선을 찍고 「도면 표기」칸에 치수를 적어 주십시오.');
+            });
+          });
+        }).catch(function (e) { toast('PDF 도면을 그리지 못했습니다: ' + e.message, true); });
+      });
+      return;
+    }
     function store(dataUrl) {
       it.drawing_name = file.name;
       memImages[it.id] = dataUrl;
@@ -818,7 +999,7 @@
         class: 'btn', type: 'button', 'aria-pressed': ui.balloon ? 'true' : 'false',
         onclick: function () { ui.balloon = !ui.balloon; ui.placing = false; render(); }
       }, ui.balloon ? '번호 풍선 찍기 끝내기' : '번호 풍선 새로 찍기(자동 번호)') : null,
-      fileButton(src ? '도면 바꾸기' : '도면 이미지 올리기', 'image/png,image/jpeg,image/svg+xml,.png,.jpg,.jpeg,.svg,.pdf', function (f) { loadDrawing(it, f); }))));
+      fileButton(src ? '도면 바꾸기' : '도면 올리기(이미지·PDF)', 'image/png,image/jpeg,image/svg+xml,application/pdf,.png,.jpg,.jpeg,.svg,.pdf', function (f) { loadDrawing(it, f); }))));
     main.appendChild(caseBar(it));
     if (src) main.appendChild(h('div', { class: 'mode-note' },
       ui.balloon ? h('b', null, '번호 풍선 찍기 중 — 도면에서 치수 위치를 누를 때마다 ' + L.nextSpecNo(it.spec) + '번부터 번호가 붙은 풍선이 찍히고 기준표에 새 항목이 생깁니다. 오른쪽에서 기준값·공차를 넣으십시오.')
@@ -826,7 +1007,7 @@
     main.appendChild(h('div', { class: 'legend' }, badge('OK'), ' 공차 안 ', badge('NOK'), ' 공차 밖 ', badge('CHECK'), ' 확인필요 · 도면 파일: ' + (it.drawing_name || '없음')));
     if (!src) {
       main.appendChild(h('div', { class: 'card' }, h('p', null, '도면 이미지(PNG·JPG·SVG)를 올리면 항목 위치에 핀을 찍고 판정 색으로 볼 수 있습니다. 파일은 이 브라우저 안에서만 씁니다.'),
-        h('p', { class: 'note' }, 'PDF 도면은 1단계에서 바로 읽지 않습니다. PDF 뷰어에서 이미지로 저장하거나 화면 캡처해 올려 주십시오.')));
+        h('p', { class: 'note' }, 'PDF 도면은 첫 쪽을 그림으로 그려 올립니다. 글자 층이 없는 도면(CATIA 등에서 치수를 선으로 내보낸 PDF)은 치수를 자동으로 읽지 못하니, 번호 풍선을 찍고 도면 표기를 적어 주십시오. 도면 파일은 이 브라우저 밖으로 나가지 않습니다.')));
     }
     var selected = ui.selectedPin;
     var layout = h('div', { class: 'drawing-layout' });
@@ -914,9 +1095,25 @@
     if (!s) return null;
     var tolText = s.tol_upper === '' && s.tol_lower === '' ? '' :
       (L.parseNum(s.tol_upper) === -L.parseNum(s.tol_lower) && L.parseNum(s.tol_upper) > 0 ? '±' + L.parseNum(s.tol_upper) : signed(L.parseNum(s.tol_upper)) + '/' + signed(L.parseNum(s.tol_lower)));
+    var dimIn = h('input', { name: 'dim', placeholder: '예: Ø145.8 g6 · ◎Ø0.08 A B · 253 0/-0.3 · 3.5° 0/-30\'' });
+    var dimMsg = h('span', { class: 'sub' }, s.fit ? '끼워맞춤 ' + s.fit + (s.tol_src ? ' — 공차는 ' + s.tol_src + ' 표 값(확인해 주십시오)' : ' — 공차를 직접 넣어 주십시오') : '');
     var f = h('form', { class: 'quick-edit', novalidate: true },
       h('h3', null, no + '번 기준 고치기'),
+      field('도면 표기 그대로 적기(선택)', dimIn), dimMsg,
+      h('button', {
+        class: 'btn btn-small', type: 'button', onclick: function () {
+          var d = L.parseDimText(dimIn.value);
+          if (!d) { toast('표기를 읽지 못했습니다. 예: Ø155.4 -0.05/-0.15, Ø145.8 g6, ◎Ø0.08 A B', true); return; }
+          s.type = d.type || s.type; s.nominal = d.nominal; s.tol_upper = d.tol_upper; s.tol_lower = d.tol_lower; s.unit = d.unit;
+          s.fit = d.fit || ''; s.tol_src = d.tol_src || ''; s.datum = d.datum || '';
+          if (!s.name) s.name = dimIn.value.trim();
+          save();
+          toast(no + '번: ' + (d.type || '치수') + ' ' + d.nominal + (d.fit ? ' ' + d.fit + (d.tol_src ? ' → ' + d.tol_upper + '/' + d.tol_lower + '(ISO 286 표, 확인 필요)' : ' → 이 크기·등급은 표에 없어 공차를 직접 넣어 주십시오') : '') + ' 로 넣었습니다.');
+          render();
+        }
+      }, '표기로 채우기'),
       field('항목명', h('input', { name: 'name', value: s.name || '' })),
+      field('종류', (function () { var sel = h('select', { name: 'type' }, h('option', { value: '' }, '-'), L.DIM_TYPES.map(function (x) { return h('option', { value: x }, x); })); sel.value = s.type || ''; return sel; })()),
       field('기준값', h('input', { name: 'nominal', inputmode: 'decimal', value: fmtNum(s.nominal) })),
       field('공차 (예: ±0.1, +0.05/0)', h('input', { name: 'tol', value: tolText })),
       field('단위', h('input', { name: 'unit', value: s.unit || '' })),
@@ -925,7 +1122,8 @@
       e.preventDefault();
       var tv = f.elements.tol.value.trim(), t = tv ? L.parseTolerance(tv) : { upper: '', lower: '' };
       if (!t) { toast('공차를 읽지 못했습니다. ±0.1 또는 +0.05/0 처럼 적어 주십시오.', true); return; }
-      s.name = f.elements.name.value.trim(); s.nominal = f.elements.nominal.value.trim(); s.unit = f.elements.unit.value.trim();
+      s.name = f.elements.name.value.trim(); s.nominal = f.elements.nominal.value.trim(); s.unit = f.elements.unit.value.trim(); s.type = f.elements.type.value;
+      if (tv !== tolText) s.tol_src = '';
       s.tol_upper = t.upper; s.tol_lower = t.lower; save(); toast(no + '번 기준을 저장했습니다.'); render();
     });
     return f;
