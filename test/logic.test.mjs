@@ -113,9 +113,9 @@ test('성적서 표: 머리행 + 6행, NOK 줄 이탈량 -0.01', () => {
 console.log('표 읽기·열 지정');
 test('CSV 따옴표·쉼표', () => assert.deepEqual(L.parseDelimited('a,b\n"x,1","say ""hi"""\n'), [['a', 'b'], ['x,1', 'say "hi"']]));
 test('탭 구분(엑셀 붙여넣기)', () => assert.deepEqual(L.parseDelimited('1\t10\t±0.1\r\n2\t8\t+0.05/0'), [['1', '10', '±0.1'], ['2', '8', '+0.05/0']]));
-test('CMM 머리행 추정: 측정번호·항목명·측정값·단위', () => {
+test('CMM 머리행 추정: 측정번호·항목명·측정값·단위 (+ 기준값 선택 칸)', () => {
   const m = L.guessMapping(['Point', 'Feature', 'Nominal', 'Actual', 'Unit'], 'meas');
-  assert.deepEqual(m, { no: 0, name: 1, value: 3, unit: 4 });
+  assert.deepEqual(m, { no: 0, name: 1, value: 3, unit: 4, nominal: 2 });
 });
 test('기준표 머리행 추정: "no" 가 Nominal 에 잘못 붙지 않음', () => {
   const m = L.guessMapping(['Nominal', 'No', '공차'], 'spec');
@@ -168,5 +168,180 @@ test('엑셀 시트로 내보냈다 다시 읽어도 판정 동일', () => {
   assert.equal(Object.keys(back.inspections[0].pins).length, Object.keys(sdb.inspections[0].pins).length);
   assert.equal(back.daily.records.length, sdb.daily.records.length);
 });
+
+
+console.log('2026-09-29 — 번호 없는 측정 ↔ 도면 항목 짝 제안');
+const mkSpec = () => [
+  { no: '1', name: '전장', nominal: 100, tol_upper: 0.2, tol_lower: -0.2, unit: 'mm' },
+  { no: '2', name: '폭', nominal: 40, tol_upper: 0.1, tol_lower: -0.1, unit: 'mm' },
+  { no: '3', name: '구멍 A', nominal: 8, tol_upper: 0.05, tol_lower: 0, unit: 'mm' },
+  { no: '4', name: '구멍 B', nominal: 8, tol_upper: 0.05, tol_lower: 0, unit: 'mm' },
+  { no: '5', name: '두께', nominal: 8, tol_upper: 0.1, tol_lower: -0.1, unit: 'mm' }
+];
+test('기준값+공차가 하나뿐이면 신뢰도 높음으로 그 항목 제안', () => {
+  const insp = { spec: mkSpec(), meas: [{ no: '', name: 'LEN', value: 100.1, nominal: 100, tol_upper: 0.2, tol_lower: -0.2, unit: 'mm', source: 'CMM' }] };
+  const r = L.suggestMatches(insp, {});
+  assert.equal(r.length, 1); assert.equal(r[0].no, '1'); assert.equal(r[0].level, 'high'); assert.equal(r[0].score, 90);
+});
+test('같은 기준·공차 항목이 둘(Ø8 +0.05/0 구멍 2개)이면 측정 순서대로 3→4, 신뢰도 보통', () => {
+  const m = (v) => ({ no: '', name: 'HOLE', value: v, nominal: 8, tol_upper: 0.05, tol_lower: 0, unit: 'mm', source: 'CMM' });
+  const r = L.suggestMatches({ spec: mkSpec(), meas: [m(8.01), m(8.02)] }, {});
+  assert.deepEqual(r.map(x => x.no), ['3', '4']);
+  assert.deepEqual(r.map(x => x.level), ['mid', 'mid']);
+  assert.ok(r[0].why.includes('order'));
+});
+test('기준값은 같고 공차가 다르면 공차까지 같은 항목이 이김(8 ±0.1 → 5번)', () => {
+  const r = L.suggestMatches({ spec: mkSpec(), meas: [{ no: '', value: 8.05, nominal: 8, tol_upper: 0.1, tol_lower: -0.1, source: 'CMM' }] }, {});
+  assert.equal(r[0].no, '5'); assert.equal(r[0].level, 'high');
+});
+test('단위가 달라도 변환해 비교(8000 µm = 8 mm)', () => {
+  const r = L.suggestMatches({ spec: mkSpec(), meas: [{ no: '', value: 8050, nominal: 8000, tol_upper: 100, tol_lower: -100, unit: 'um', source: 'CMM' }] }, {});
+  assert.equal(r[0].no, '5');
+});
+test('이미 번호로 짝지어진 측정은 제안 대상이 아님', () => {
+  const r = L.suggestMatches({ spec: mkSpec(), meas: [{ no: '2', value: 40, source: 'CMM' }] }, {});
+  assert.equal(r.length, 0);
+});
+test('기준값 정보가 없으면 측정값이 공차 안에 드는 항목을 낮음으로만 제안', () => {
+  const r = L.suggestMatches({ spec: mkSpec(), meas: [{ no: '', value: 39.95, source: '수기' }] }, {});
+  assert.equal(r[0].no, '2'); assert.equal(r[0].level, 'low');
+});
+test('맞는 기준값이 없으면 제안 없음(no=null)', () => {
+  const r = L.suggestMatches({ spec: mkSpec(), meas: [{ no: '', value: 2.5, nominal: 2.5, source: 'CMM' }] }, {});
+  assert.equal(r[0].no, null);
+});
+test('이미 같은 출처 측정이 붙은 항목은 뒤로 밀림 — 전장 CMM 이 있으면 두 번째 100 은 제안 점수 하락', () => {
+  const insp = { spec: mkSpec(), meas: [{ no: '1', value: 100, source: 'CMM' }, { no: '', value: 100.1, nominal: 100, tol_upper: 0.2, tol_lower: -0.2, source: 'CMM' }] };
+  const r = L.suggestMatches(insp, {});
+  assert.equal(r[0].no, '1'); assert.equal(r[0].score, 65); assert.equal(r[0].level, 'mid'); assert.ok(r[0].why.includes('taken'));
+});
+test('제안 반영: 측정 번호가 바뀌고 원래 번호는 orig_no 로 남음 → 판정에 들어감', () => {
+  const insp = { spec: mkSpec(), meas: [{ no: 'P17', value: 100.3, nominal: 100, tol_upper: 0.2, tol_lower: -0.2, source: 'CMM' }] };
+  const r = L.suggestMatches(insp, {});
+  assert.equal(r[0].no, '1');
+  assert.equal(L.applyMatches(insp, [{ meas: 0, no: r[0].no }]), 1);
+  assert.equal(insp.meas[0].no, '1'); assert.equal(insp.meas[0].orig_no, 'P17'); assert.equal(insp.meas[0].matched, 'suggest');
+  const e = L.evaluate(insp, {}); assert.equal(e.rows[0].status, 'NOK'); assert.equal(e.extra.length, 0);
+});
+test('도면에 번호가 없을 때: 측정 결과로 기준표를 만들고 1, 2, 3… 자동 번호', () => {
+  const insp = { spec: [], meas: [
+    { no: '', name: 'A', value: 10.05, nominal: 10, tol_upper: 0.1, tol_lower: -0.1, unit: 'mm', source: 'CMM' },
+    { no: '', name: 'B', value: 20.3, nominal: 20, tol_upper: 0.2, tol_lower: -0.2, unit: 'mm', source: 'CMM' },
+    { no: '', name: 'C', value: 5 }] };
+  assert.equal(L.specFromMeas(insp, {}), 2);
+  assert.deepEqual(insp.spec.map(s => s.no), ['1', '2']);
+  assert.deepEqual(insp.meas.map(m => m.no), ['1', '2', '']);
+  const e = L.evaluate(insp, {}); assert.deepEqual([e.counts.OK, e.counts.NOK, e.counts.CHECK], [1, 1, 1]);
+});
+test('기준표에 있는 번호 다음부터 매김(nextSpecNo) — 숫자 아닌 번호는 무시', () => {
+  assert.equal(L.nextSpecNo([{ no: '3' }, { no: 'A1' }, { no: '007' }]), 8);
+  assert.equal(L.nextSpecNo([]), 1);
+});
+test('CMM 열 지정: 공차 한 칸 표기를 상·하한으로 풀고 빈 선택 칸은 뺌', () => {
+  const rows = [['No', 'Nominal', 'Tol', 'Actual'], ['', '8', '+0.05/0', '8.02'], ['3', '', '', '5.1']];
+  const out = L.applyMapping(rows, 0, L.guessMapping(rows[0], 'meas'), 'meas');
+  assert.equal(out[0].nominal, '8'); assert.equal(out[0].tol_upper, 0.05); assert.equal(out[0].tol_lower, 0);
+  assert.ok(!('nominal' in out[1]));
+});
+
+console.log('PDF 성적서 글자 붙여넣기');
+test('공백으로만 나뉜 글자: 띄어 쓴 항목명은 한 칸, 머리행은 낱말마다', () => {
+  const rows = L.textToRows('No Feature Nominal Actual\n1 HOLE A DIA 8.000 8.030\n2 LENGTH 100.000 99.950\n');
+  assert.deepEqual(rows[1], ['1', 'HOLE A DIA', '8.000', '8.030']);
+  assert.deepEqual(rows[2], ['1'.replace('1', '2'), 'LENGTH', '100.000', '99.950']);
+  assert.deepEqual(rows[0], ['No', 'Feature', 'Nominal', 'Actual']);
+});
+test('두 칸 이상 공백·탭이 있으면 그것으로 나눔', () => {
+  assert.deepEqual(L.textToRows('1   HOLE A   8.0')[0], ['1', 'HOLE A', '8.0']);
+  assert.deepEqual(L.textToRows('1\tHOLE A\t8.0')[0], ['1', 'HOLE A', '8.0']);
+});
+test('붙여넣은 글자 → 열 지정 → 판정까지', () => {
+  const rows = L.textToRows('Point Feature Nominal +Tol -Tol Actual\n1 LENGTH 100 0.2 -0.2 100.25');
+  const map = L.guessMapping(rows[0], 'meas');
+  assert.equal(map.value, 5); assert.equal(map.tol_upper, 3); assert.equal(map.tol_lower, 4);
+  const m = L.applyMapping(rows, 0, map, 'meas');
+  const e = L.evaluate({ spec: mkSpec(), meas: m }, {}); assert.equal(e.rows[0].status, 'NOK');
+});
+
+console.log('사진 판독(AI) 답 읽기 · 사진 지문');
+test('```json 울타리와 앞뒤 설명이 있어도 배열을 읽음', () => {
+  const r = L.parseAiJson('다음과 같습니다.\n```json\n[{"no":"9","value":"30.2","unsure":false},{"no":12,"value":1.1,"unsure":"true"}]\n```\n확인해 주세요');
+  assert.equal(r.rows.length, 2); assert.equal(r.rows[1].no, '12'); assert.equal(r.rows[1].value, '1.1'); assert.equal(r.rows[1].unsure, true);
+});
+test('{rows:[...]} 형태도 받음, 배열이 없으면 error', () => {
+  assert.equal(L.parseAiJson('{"rows":[{"item":"압력","result":"○","value":"18.2"}]}').rows[0].item, '압력');
+  assert.ok(L.parseAiJson('읽을 수 없습니다').error);
+});
+test('요청문에 항목번호 목록이 들어가고 기준값·공차(도면 정보)는 들어가지 않음', () => {
+  const p = L.aiPromptMeasure(mkSpec());
+  assert.ok(p.includes('- 3 (구멍 A)')); assert.ok(!p.includes('0.05')); assert.ok(p.includes('해 줘'));
+});
+test('사진 지문: 같은 바이트면 같고, 한 바이트만 달라도 다름', () => {
+  const a = new Uint8Array([1, 2, 3, 4, 5]), b = new Uint8Array([1, 2, 3, 4, 6]);
+  assert.equal(L.hashBytes(a), L.hashBytes(new Uint8Array([1, 2, 3, 4, 5]))); assert.notEqual(L.hashBytes(a), L.hashBytes(b));
+});
+test('같은 사진 파일이 다른 날·다른 설비에 다시 쓰이면 확인 필요, 같은 점검 안의 여러 항목은 한 번만', () => {
+  const recs = [
+    { vendor: 'A', date: '2026-09-28', equip: '1호기', item: '압력', result: '○', value: '18', photo_hash: 'h1' },
+    { vendor: 'A', date: '2026-09-28', equip: '1호기', item: '온도', result: '○', value: '45', photo_hash: 'h1' },
+    { vendor: 'A', date: '2026-09-29', equip: '1호기', item: '압력', result: '○', value: '18', photo_hash: 'h1' },
+    { vendor: 'A', date: '2026-09-29', equip: '1호기', item: '온도', result: '○', value: '45', photo_hash: 'h1' },
+    { vendor: 'A', date: '2026-09-29', equip: '2호기', item: '압력', result: '○', value: '17', photo_hash: 'h2' }];
+  const c = L.dailyChecks(recs, [], {}).filter(x => x.kind === 'same_photo');
+  assert.equal(c.length, 1); assert.equal(c[0].date, '2026-09-29');
+});
+
+
+console.log('예시 파일로 짝 제안 끝까지 (samples/)');
+{
+  const fs = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const dir = new URL('../samples/', import.meta.url);
+  const spec = Sample.build().inspections[0].spec;
+  const expectNos = ['1', '2', '3', '4', '5', '6', '10'];
+  test('번호 없는 CMM CSV → 열 지정 → 짝 제안 = 1·2·3·4·5·6·10번 (구멍 4·5 는 순서 짝, 보통)', () => {
+    const rows = L.parseDelimited(fs.readFileSync(fileURLToPath(new URL('예시데이터_CMM결과_번호없음.csv', dir)), 'utf8'));
+    const hr = L.guessHeaderRow(rows);
+    const meas = L.applyMapping(rows, hr, L.guessMapping(rows[hr], 'meas'), 'meas').map(m => Object.assign(m, { source: 'CMM' }));
+    const r = L.suggestMatches({ spec, meas }, {});
+    assert.deepEqual(r.map(x => x.no), expectNos);
+    assert.deepEqual(r.map(x => x.level), ['high', 'high', 'high', 'mid', 'mid', 'high', 'high']);
+    const insp = { spec, meas }; L.applyMatches(insp, r.map(x => ({ meas: x.meas, no: x.no })));
+    const e = L.evaluate(insp, {});
+    assert.deepEqual([e.counts.OK, e.counts.NOK, e.extra.length], [5, 2, 0]); // 2번 폭 40.13·5번 구멍 7.98 NOK, 나머지 기준 5개는 측정 없음
+  });
+  test('PDF 복사 글자(P1… 장비 번호) → 칸 나누기 → 같은 짝 제안', () => {
+    const rows = L.textToRows(fs.readFileSync(fileURLToPath(new URL('예시데이터_CMM_PDF복사본.txt', dir)), 'utf8'));
+    const hr = rows.findIndex(r => r[0] === 'Point');
+    const meas = L.applyMapping(rows, hr, L.guessMapping(rows[hr], 'meas'), 'meas').map(m => Object.assign(m, { source: 'CMM' }));
+    assert.equal(meas[3].name, 'HOLE DIA');
+    assert.deepEqual(L.suggestMatches({ spec, meas }, {}).map(x => x.no), expectNos);
+  });
+}
+
+console.log('폐쇄망 — 외부로 나가는 요청 코드 검사');
+{
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const files = ['index.html', 'css/style.css', 'vendor/xlsx.full.min.js'].concat(fs.readdirSync(path.join(root, 'js')).map(f => 'js/' + f));
+  // 네트워크로 나가는 브라우저 API·외부 자원 불러오기
+  const NET = /\bfetch\s*\(|XMLHttpRequest|new\s+WebSocket|EventSource|sendBeacon|importScripts|<script[^>]+src=["']?https?:|<link[^>]+href=["']?https?:|@import|url\(\s*["']?https?:|\.src\s*=\s*["']https?:/g;
+  const hits = [];
+  files.forEach(f => {
+    const t = fs.readFileSync(path.join(root, f), 'utf8');
+    let m; NET.lastIndex = 0;
+    while ((m = NET.exec(t))) hits.push(f + ': ' + m[0]);
+  });
+  test('네트워크 요청 코드는 js/ai.js 의 fetch 한 곳뿐(AI 읽기, 폐쇄망 모드에서 막힘)', () => {
+    assert.deepEqual(hits, ['js/ai.js: fetch(']);
+  });
+  test('ai.js 는 폐쇄망 모드가 꺼져 있을 때만 요청(가드 문구 존재)', () => {
+    const t = fs.readFileSync(path.join(root, 'js/ai.js'), 'utf8');
+    assert.ok(/if\s*\(\s*opts\.offline\s*!==\s*false\s*\)/.test(t));
+  });
+  test('기본 설정은 폐쇄망 모드 켬', () => assert.equal(L.emptyDb().settings.offline_mode, true));
+}
 
 console.log(process.exitCode ? '\n실패 있음' : '\n전부 통과 ' + passed + '건');

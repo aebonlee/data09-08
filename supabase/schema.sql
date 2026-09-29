@@ -45,6 +45,8 @@ create table if not exists public.app_settings (
   blank_unit_as_spec  boolean not null default true,   -- 측정 단위가 비면 기준표 단위로 봄
   repeat_days         int check (repeat_days is null or repeat_days >= 2), -- 같은 값 N회 연속이면 확인필요(비우면 검사 안 함)
   current_inspection  text not null default '',        -- 마지막으로 연 검사 건(insp_key)
+  offline_mode        boolean not null default true,   -- 폐쇄망 모드(켜면 AI 읽기 숨김). OpenAI 키는 DB 에 두지 않습니다
+  ai_model            text not null default 'gpt-4o-mini',
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now(),
   -- ⚠ 프런트에서 upsert 할 때 onConflict: 'owner_id'
@@ -114,11 +116,17 @@ create table if not exists public.measurement (
   owner_id       uuid not null default auth.uid(),
   inspection_id  bigint not null references public.inspection(id) on delete cascade,
   line_no        int not null check (line_no >= 1),
-  no             text not null check (length(btrim(no)) > 0),   -- 측정번호(항목번호)
+  no             text not null default '',                       -- 측정번호(항목번호). 번호 없는 CMM 출력은 빈칸(2026-09-29)
   name           text not null default '',
   value          text not null default '',                       -- 측정값(글자 그대로 — 위 기준값과 같은 이유)
   unit           text not null default '',
   source         text not null default '',                       -- 'CMM' · '수기' · 파일 이름 등
+  nominal        text not null default '',                       -- CMM 출력에 있던 기준값(선택) — 번호 없는 측정의 짝 제안에 씀
+  tol_upper      text not null default '',
+  tol_lower      text not null default '',
+  orig_no        text not null default '',                       -- 짝 제안·자동 번호로 바뀌기 전의 원래 측정번호
+  matched        text not null default '' check (matched in ('', 'suggest', 'auto_no')),
+  photo          text not null default '',                       -- 수기 측정을 옮겨 적은 사진 파일 이름(사진 자체는 저장 안 함)
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),
   constraint measurement_insp_line_key unique (inspection_id, line_no)
@@ -163,6 +171,7 @@ create table if not exists public.daily_check (
   result      text not null default '',                           -- 판정(√ ○ × NG … 빈칸이면 규칙 검사에 걸림)
   value       text not null default '',                           -- 측정값(글자 그대로 — 미기입·숫자 아님을 도구가 검출)
   photo       text not null default '',                           -- 원본 사진 파일 이름
+  photo_hash  text not null default '',                           -- 사진 파일 지문(같은 사진 재사용 확인용, 2026-09-29)
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
   -- ⚠ upsert 시 onConflict: 'owner_id,vendor,date,equip,item'
@@ -182,6 +191,21 @@ create table if not exists public.check_limit (
   constraint check_limit_owner_item_key unique (owner_id, item),
   constraint check_limit_range check (lower is null or upper is null or lower <= upper)
 );
+
+-- 1-1. 2026-09-29 추가 칸 — 이미 표를 만든 프로젝트에 다시 실행해도 맞춰지도록
+alter table public.measurement drop constraint if exists measurement_no_check;
+alter table public.measurement alter column no set default '';
+alter table public.measurement add column if not exists nominal   text not null default '';
+alter table public.measurement add column if not exists tol_upper text not null default '';
+alter table public.measurement add column if not exists tol_lower text not null default '';
+alter table public.measurement add column if not exists orig_no   text not null default '';
+alter table public.measurement add column if not exists matched   text not null default '';
+alter table public.measurement add column if not exists photo     text not null default '';
+alter table public.measurement drop constraint if exists measurement_matched_check;
+alter table public.measurement add constraint measurement_matched_check check (matched in ('', 'suggest', 'auto_no'));
+alter table public.daily_check add column if not exists photo_hash text not null default '';
+alter table public.app_settings add column if not exists offline_mode boolean not null default true;
+alter table public.app_settings add column if not exists ai_model text not null default 'gpt-4o-mini';
 
 -- ----------------------------------------------------------------------------
 -- 2. 함수 · 트리거 (search_path 고정)

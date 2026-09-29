@@ -19,6 +19,10 @@ XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['예시 데이터 - �
 fs.writeFileSync(path.join(out, '예시데이터_치수기준표.xlsx'), XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
 
 fs.writeFileSync(path.join(out, '예시데이터_CMM결과.csv'), csv(Sample.CMM_ROWS));
+fs.writeFileSync(path.join(out, '예시데이터_CMM결과_번호없음.csv'), csv(Sample.CMM_NONUM));
+// PDF 성적서에서 표를 드래그해 복사하면 나오는 글자 모양(공백 구분). 측정번호 P1… 은 장비 번호라 도면 번호와 다릅니다 — 「PDF 성적서 글자 붙여넣기」·짝 제안 시연용
+fs.writeFileSync(path.join(out, '예시데이터_CMM_PDF복사본.txt'), ['예시 데이터 - PDF 성적서에서 복사한 글자를 흉내 낸 가상 파일', 'Point Feature Nominal +Tol -Tol Actual']
+  .concat(Sample.CMM_NONUM.slice(2).map((r, i) => ['P' + (i + 1), r[0].replace(/_/g, ' '), r[1].toFixed(3), r[2].toFixed(3), r[3].toFixed(3), r[4].toFixed(3)].join(' '))).join('\n') + '\n');
 fs.writeFileSync(path.join(out, '예시데이터_수기측정.csv'), csv([['항목번호', '항목명', '측정값', '단위']].concat(Sample.MANUAL)));
 fs.writeFileSync(path.join(out, '예시데이터_도면.svg'), Sample.drawingSvg());
 fs.writeFileSync(path.join(out, '예시데이터_설비목록.csv'), csv([['협력사', '설비', '순서']].concat(Sample.EQUIP)));

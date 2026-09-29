@@ -154,25 +154,34 @@
 
   // 검사 건 전체 평가: 매칭 + 판정
   // inspection: { spec:[...], meas:[...] }, settings: { match_by_name, round_before_judge, blank_unit_as_spec }
-  function evaluate(inspection, settings) {
-    settings = settings || {};
-    var spec = inspection.spec || [], meas = inspection.meas || [];
+  // 기준표 색인: 항목번호·항목명 → 줄 번호
+  function indexSpec(spec) {
     var byNo = {}, byName = {}, dupNo = {};
-    spec.forEach(function (s, i) {
+    (spec || []).forEach(function (s, i) {
       var k = normKey(s.no);
       if (k) { if (byNo[k] != null) dupNo[k] = true; else byNo[k] = i; }
       var nk = normKey(s.name);
       if (nk && byName[nk] == null) byName[nk] = i; else if (nk) byName[nk] = -1; // 이름이 겹치면 이름 매칭 안 함
     });
+    return { byNo: byNo, byName: byName, dupNo: dupNo };
+  }
+  // 측정 한 줄이 기준표 몇 번째 줄과 맞는지(항목번호 → 번호가 비었으면 항목명). 못 맞추면 null
+  function matchIndex(m, ix, settings) {
+    var k = normKey(m.no);
+    if (k) return ix.byNo[k] != null ? ix.byNo[k] : null;
+    if (settings && settings.match_by_name === false) return null;
+    var nk = normKey(m.name);
+    return nk && ix.byName[nk] != null && ix.byName[nk] >= 0 ? ix.byName[nk] : null;
+  }
+
+  function evaluate(inspection, settings) {
+    settings = settings || {};
+    var spec = inspection.spec || [], meas = inspection.meas || [];
+    var ix = indexSpec(spec), dupNo = ix.dupNo;
     var bucket = spec.map(function () { return []; });
     var extra = [];
     meas.forEach(function (m) {
-      var k = normKey(m.no), idx = null;
-      if (k && byNo[k] != null) idx = byNo[k];
-      else if (!k && settings.match_by_name !== false) {
-        var nk = normKey(m.name);
-        if (nk && byName[nk] != null && byName[nk] >= 0) idx = byName[nk];
-      }
+      var idx = matchIndex(m, ix, settings);
       if (idx == null) extra.push({ no: m.no, name: m.name, value: m.value, unit: m.unit, source: m.source || '', status: STATUS.CHECK, reasons: ['unmatched'] });
       else bucket[idx].push(m);
     });
@@ -258,10 +267,16 @@
       { key: 'decimals', label: '소수점 자리수', kw: ['자리수', '소수점', 'decimals'] }
     ],
     meas: [
-      { key: 'no', label: '측정번호(항목번호)', need: true, kw: ['측정번호', '항목번호', '번호', 'no', 'item', 'id', 'point', '#'] },
+      // 측정번호는 필수가 아닙니다 — 번호 없는 CMM 출력은 기준값·공차로 짝을 제안합니다(2026-09-29)
+      { key: 'no', label: '측정번호(항목번호, 없으면 비움)', kw: ['측정번호', '항목번호', '번호', 'no', 'item', 'id', 'point', '#'] },
       { key: 'name', label: '항목명', kw: ['항목명', '명칭', 'name', 'feature', 'description', 'label'] },
       { key: 'value', label: '측정값', need: true, kw: ['측정값', '실측값', '측정치', 'actual', 'measured', 'meas', 'value', '결과'] },
-      { key: 'unit', label: '단위', kw: ['단위', 'unit'] }
+      { key: 'unit', label: '단위', kw: ['단위', 'unit'] },
+      // 아래 넷은 선택 — CMM 출력에 기준값·공차가 있으면 번호 없는 측정도 도면 항목과 짝을 제안할 수 있습니다
+      { key: 'nominal', label: '기준값(선택)', kw: ['기준값', '기준치', '설계값', '도면치수', 'nominal', 'nom', 'target'] },
+      { key: 'tol_upper', label: '상한공차(선택)', kw: ['상한공차', '상공차', '+tol', 'utol', 'uppertol', 'upper'] },
+      { key: 'tol_lower', label: '하한공차(선택)', kw: ['하한공차', '하공차', '-tol', 'ltol', 'lowertol', 'lower'] },
+      { key: 'tol_text', label: '공차 한 칸 표기(선택, 예: ±0.1)', kw: ['공차', 'tolerance', 'tol'] }
     ],
     equip: [
       { key: 'vendor', label: '협력사', need: true, kw: ['협력사', '업체', 'vendor', 'supplier'] },
@@ -337,6 +352,7 @@
       if (any) out.push(o);
     }
     if (kind === 'spec') out = out.map(normalizeSpecRow);
+    if (kind === 'meas') out = out.map(normalizeMeasRow);
     return out;
   }
   function missingRequired(map, kind) {
@@ -356,6 +372,228 @@
       if (t) { r.tol_upper = t.upper; r.tol_lower = t.lower; }
     }
     return r;
+  }
+
+  // 측정 한 줄: 공차 한 칸 표기를 상·하한으로 풀고, 쓰지 않은 선택 칸은 뺍니다
+  function normalizeMeasRow(o) {
+    var r = { no: o.no == null ? '' : String(o.no), name: o.name || '', value: o.value, unit: o.unit || '' };
+    var up = o.tol_upper == null ? '' : o.tol_upper, lo = o.tol_lower == null ? '' : o.tol_lower;
+    if (up === '' && lo === '' && o.tol_text) { var t = parseTolerance(o.tol_text); if (t) { up = t.upper; lo = t.lower; } }
+    if (o.nominal != null && o.nominal !== '') r.nominal = o.nominal;
+    if (up !== '') r.tol_upper = up;
+    if (lo !== '') r.tol_lower = lo;
+    return r;
+  }
+
+  // ── 번호 없는 측정 ↔ 도면 항목 짝 제안 (2026-09-29 수강생 요청) ─────────
+  // 도면에 풍선 번호가 없거나 CMM 측정번호가 도면 번호와 다를 때, 측정 결과에 함께 나오는
+  // 기준값·공차로 기준표(도면 항목)의 짝을 「제안」합니다. 반영은 사람이 확인한 뒤에만 합니다.
+  //   점수: 기준값 같음 60 · 공차까지 같음 +30 · 공차 다름 -20 · 항목명 같음 +10
+  //         기준값이 없으면 측정값이 공차 안에 드는 항목 15(참고용, 기본 선택 안 함)
+  //         같은 출처 측정이 이미 붙은 항목 -25
+  //   같은 점수 후보가 여럿이면(예: 같은 Ø8 +0.05/0 구멍 두 개) 측정 순서대로 남은 항목과 짝짓고 신뢰도를 한 단계 낮춥니다.
+  var MATCH_WHY = {
+    nominal: '기준값 같음', tol: '공차 같음', tol_diff: '공차 다름', name: '항목명 같음',
+    range: '측정값이 이 항목 공차 안(기준값 정보 없음 — 참고용)', taken: '이미 같은 출처 측정이 붙은 항목', order: '같은 기준 항목이 여럿 — 순서대로 짝지음'
+  };
+  var MATCH_LEVEL = { high: '높음', mid: '보통', low: '낮음' };
+  function sameNum(a, b) { return a != null && b != null && Math.abs(clean(a) - clean(b)) < 1e-9; }
+  // 측정 단위의 값을 기준 단위로. 알 수 없거나 비어 있으면 그대로(같은 단위로 봄)
+  function toSpecUnit(v, mUnit, sUnit) {
+    if (v == null) return null;
+    var mu = normUnit(mUnit), su = normUnit(sUnit);
+    if (!mu || !su || mu === su) return v;
+    var c = convertUnit(v, mu, su);
+    return c.error ? null : c.value;
+  }
+  function suggestMatches(inspection, settings) {
+    var spec = inspection.spec || [], meas = inspection.meas || [];
+    var ix = indexSpec(spec);
+    var taken = {};  // 기준 줄 번호 → { 출처: true }
+    var todo = [];
+    meas.forEach(function (m, i) {
+      var idx = matchIndex(m, ix, settings);
+      if (idx != null) { (taken[idx] = taken[idx] || {})[m.source || ''] = true; }
+      else todo.push(i);
+    });
+    var out = [];
+    todo.forEach(function (i) {
+      var m = meas[i], src = m.source || '';
+      var mn = parseNum(m.nominal), mv = parseNum(m.value);
+      var mu = parseNum(m.tol_upper), ml = parseNum(m.tol_lower);
+      var cands = [];
+      spec.forEach(function (s, j) {
+        if (!normKey(s.no)) return;               // 번호 없는 기준 줄에는 붙일 수 없습니다
+        var sn = parseNum(s.nominal); if (sn == null) return;
+        var score = 0, why = [];
+        if (mn != null) {
+          if (!sameNum(toSpecUnit(mn, m.unit, s.unit), sn)) return;
+          score = 60; why.push('nominal');
+          var su = parseNum(s.tol_upper), sl = parseNum(s.tol_lower);
+          if (mu != null || ml != null) {
+            var a = toSpecUnit(mu == null ? 0 : mu, m.unit, s.unit), b = toSpecUnit(ml == null ? 0 : ml, m.unit, s.unit);
+            if (sameNum(a, su == null ? 0 : su) && sameNum(b, sl == null ? 0 : sl)) { score += 30; why.push('tol'); }
+            else { score -= 20; why.push('tol_diff'); }
+          }
+        } else {
+          var lim = specLimits(s), v = toSpecUnit(mv, m.unit, s.unit);
+          if (lim.error || v == null || v < lim.lower || v > lim.upper) return;
+          score = 15; why.push('range');
+        }
+        if (normKey(m.name) && normKey(m.name) === normKey(s.name)) { score += 10; why.push('name'); }
+        cands.push({ j: j, score: score, why: why });
+      });
+      out.push({ meas: i, cands: cands });
+    });
+    // 측정 순서대로, 아직 이 출처로 짝지어지지 않은 항목 중 점수가 가장 높은 것
+    return out.map(function (o) {
+      var src = meas[o.meas].source || '';
+      var live = o.cands.map(function (c) {
+        var t = taken[c.j] && taken[c.j][src];
+        return { j: c.j, score: c.score - (t ? 25 : 0), why: t ? c.why.concat('taken') : c.why };
+      }).filter(function (c) { return c.score >= 15; });
+      live.sort(function (a, b) { return b.score - a.score || a.j - b.j; });
+      if (!live.length) return { meas: o.meas, no: null, level: null, score: 0, why: [], alts: [] };
+      var pick = live[0];
+      var level = pick.score >= 90 ? 'high' : pick.score >= 50 ? 'mid' : 'low';
+      var why = pick.why.slice();
+      // 원래 점수(이미 짝지은 것 빼기 전)로 같은 최고점 후보가 여럿이었으면 순서로 짝지은 것입니다
+      var raw = o.cands.filter(function (c) { return c.j === pick.j; })[0].score;
+      var rivals = o.cands.filter(function (c) { return c.score === raw; }).length;
+      if (rivals > 1) { why.push('order'); if (level === 'high') level = 'mid'; }
+      (taken[pick.j] = taken[pick.j] || {})[src] = true;
+      return {
+        meas: o.meas, no: spec[pick.j].no, name: spec[pick.j].name || '', level: level, score: pick.score, why: why,
+        alts: live.slice(1).filter(function (c) { return c.score >= 50; }).map(function (c) { return spec[c.j].no; })
+      };
+    });
+  }
+  function matchWhyText(codes) { return (codes || []).map(function (c) { return MATCH_WHY[c] || c; }).join(' · '); }
+  // picks: [{ meas: 측정 줄 번호, no: 붙일 항목번호 }] — 측정의 번호를 바꾸고 「제안 매칭」 표시를 남깁니다
+  function applyMatches(inspection, picks) {
+    var n = 0;
+    (picks || []).forEach(function (p) {
+      var m = inspection.meas[p.meas];
+      if (!m || p.no == null || p.no === '') return;
+      if (!m.orig_no && m.no) m.orig_no = m.no;   // 원래 CMM 측정번호는 남겨 둡니다
+      m.no = String(p.no); m.matched = 'suggest'; n++;
+    });
+    return n;
+  }
+
+  // 기준표 다음 번호(숫자 번호 중 가장 큰 값 + 1)
+  function nextSpecNo(spec) {
+    var mx = 0;
+    (spec || []).forEach(function (s) { var k = normKey(s.no); if (/^\d+$/.test(k) && Number(k) > mx) mx = Number(k); });
+    return mx + 1;
+  }
+  // 도면에 번호가 없고 기준표도 없을 때: 기준값이 있는 측정 줄로 기준표를 만들고 번호를 1, 2, 3… 매깁니다.
+  // 측정에 번호가 있고 기준표에 없는 번호면 그 번호를 그대로 씁니다. 측정 줄의 번호도 같이 채워 짝을 지어 둡니다.
+  function specFromMeas(inspection, settings) {
+    var spec = inspection.spec || (inspection.spec = []);
+    var ix = indexSpec(spec), added = 0;
+    (inspection.meas || []).forEach(function (m) {
+      if (matchIndex(m, ix, settings) != null) return;
+      if (parseNum(m.nominal) == null) return;
+      var k = normKey(m.no);
+      var no = k && ix.byNo[k] == null ? String(m.no).trim() : String(nextSpecNo(spec));
+      spec.push({ no: no, name: m.name || '', type: '', nominal: m.nominal, tol_upper: m.tol_upper == null ? '' : m.tol_upper,
+        tol_lower: m.tol_lower == null ? '' : m.tol_lower, unit: m.unit || '', decimals: '' });
+      ix.byNo[normKey(no)] = spec.length - 1;
+      if (String(m.no || '') !== no) { if (m.no) m.orig_no = m.no; m.no = no; m.matched = 'auto_no'; }
+      added++;
+    });
+    return added;
+  }
+
+  // ── PDF 성적서 글자 붙여넣기 → 표 ─────────────────────────────
+  // PDF 를 직접 읽지 않는 대신, PDF 뷰어에서 표를 드래그해 복사한 글자를 줄·칸으로 나눕니다.
+  // 탭이나 두 칸 이상 공백이 있으면 그것으로 나누고, 없으면 공백으로 나누되 숫자 사이에 낀
+  // 글자 조각(HOLE A DIA 처럼 띄어 쓴 항목명)은 한 칸으로 붙입니다. 숫자가 섞인 번호(P1)는 따로 둡니다.
+  function isNumTok(t) { return parseNum(String(t).replace(/^[+]/, '')) != null; }
+  function textToRows(text) {
+    var lines = String(text || '').replace(/^﻿/, '').split(/\r?\n/);
+    var out = [];
+    lines.forEach(function (line) {
+      var raw = line.replace(/ /g, ' ').trim();
+      if (!raw) return;
+      var cells;
+      if (raw.indexOf('\t') >= 0) cells = raw.split('\t').map(function (c) { return c.trim(); });
+      else if (/\S\s{2,}\S/.test(raw)) cells = raw.split(/\s{2,}/);
+      else {
+        var toks = raw.split(/\s+/);
+        var nums = toks.filter(isNumTok).length;
+        if (nums < 2) cells = toks;            // 머리행·제목 줄: 낱말마다 한 칸
+        else {
+          cells = [];
+          toks.forEach(function (t, i) {
+            // 앞 토큰이 숫자 없는 낱말일 때만 붙입니다(P1·A12 같은 번호는 따로 한 칸)
+            var prevText = i > 0 && !/\d/.test(toks[i - 1]) && cells.length;
+            if (!isNumTok(t) && prevText) cells[cells.length - 1] += ' ' + t;
+            else cells.push(t);
+          });
+        }
+      }
+      out.push(cells);
+    });
+    return out;
+  }
+
+  // ── 사진 판독(AI) 요청문·답 읽기 ────────────────────────────
+  // 요청문은 도면·치수 정보 없이 「번호·측정값」만 뽑게 합니다. 답은 JSON 배열.
+  function aiPromptMeasure(spec) {
+    var list = (spec || []).filter(function (s) { return normKey(s.no); })
+      .map(function (s) { return '- ' + s.no + (s.name ? ' (' + s.name + ')' : ''); }).join('\n');
+    return [
+      '첨부한 사진은 손으로 적은 치수 측정표입니다. 표에 적힌 항목번호와 측정값을 읽어 줘.',
+      '규칙:',
+      '1. 답은 JSON 배열 하나만 보내 줘. 설명 문장은 붙이지 말아 줘.',
+      '2. 형식: [{"no": "항목번호", "value": "측정값", "unit": "단위(적혀 있을 때만)", "unsure": true/false}]',
+      '3. 숫자는 사진에 적힌 그대로 옮겨 줘(반올림·추정 금지). 흐리거나 확실하지 않으면 "unsure": true 로 표시해 줘.',
+      '4. 읽을 수 없는 칸은 빼 줘.',
+      list ? '참고 — 이 검사의 항목번호 목록:\n' + list : ''
+    ].filter(Boolean).join('\n');
+  }
+  function aiPromptDaily(items) {
+    var list = (items || []).filter(Boolean).map(function (x) { return '- ' + x; }).join('\n');
+    return [
+      '첨부한 사진은 설비 일일점검표입니다. 점검항목별 판정 표시(√ ○ × 등)와 측정값을 읽어 줘. 중국어로 적혀 있으면 점검항목 이름을 한국어로 옮기고 원문을 괄호에 남겨 줘.',
+      '규칙:',
+      '1. 답은 JSON 배열 하나만 보내 줘. 설명 문장은 붙이지 말아 줘.',
+      '2. 형식: [{"item": "점검항목", "result": "판정 표시 그대로", "value": "측정값(없으면 빈칸)", "unsure": true/false}]',
+      '3. 숫자는 사진에 적힌 그대로 옮겨 줘. 흐리거나 확실하지 않으면 "unsure": true 로 표시해 줘.',
+      list ? '참고 — 이 설비의 점검항목 목록:\n' + list : ''
+    ].filter(Boolean).join('\n');
+  }
+  // AI 답(글자) → 배열. ```json 울타리·앞뒤 설명·{rows:[…]} 형태를 모두 받습니다. 못 읽으면 { error }
+  function parseAiJson(text) {
+    var s = String(text || '').trim();
+    var fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fence) s = fence[1].trim();
+    var a = s.indexOf('['), b = s.lastIndexOf(']');
+    var data = null;
+    try { data = JSON.parse(s); }
+    catch (e) { if (a >= 0 && b > a) { try { data = JSON.parse(s.slice(a, b + 1)); } catch (e2) { data = null; } } }
+    if (data && !Array.isArray(data)) { var k = Object.keys(data).filter(function (x) { return Array.isArray(data[x]); })[0]; data = k ? data[k] : null; }
+    if (!Array.isArray(data)) return { error: 'JSON 배열을 찾지 못했습니다' };
+    return {
+      rows: data.filter(function (r) { return r && typeof r === 'object'; }).map(function (r) {
+        var o = {};
+        Object.keys(r).forEach(function (k) { o[k] = r[k] == null ? '' : (typeof r[k] === 'boolean' ? r[k] : String(r[k]).trim()); });
+        o.unsure = r.unsure === true || r.unsure === 'true';
+        return o;
+      })
+    };
+  }
+
+  // 파일 바이트 지문(FNV-1a 32비트 두 벌) — 같은 사진 파일을 다시 올렸는지 확인용. 암호용이 아닙니다.
+  function hashBytes(bytes) {
+    var h1 = 0x811c9dc5, h2 = 0x01000193 ^ 0x5bd1e995;
+    for (var i = 0; i < bytes.length; i++) {
+      h1 ^= bytes[i]; h1 = Math.imul(h1, 0x01000193) >>> 0;
+      h2 ^= bytes[i] + (i & 0xff); h2 = Math.imul(h2, 0x01000193) >>> 0;
+    }
+    return ('0000000' + h1.toString(16)).slice(-8) + ('0000000' + h2.toString(16)).slice(-8) + '-' + bytes.length;
   }
 
   // ── 성적서 행 ──────────────────────────────────────────────
@@ -428,7 +666,8 @@
     missing_value: '측정값 미기입',
     invalid_value: '측정값을 숫자로 읽을 수 없음',
     out_of_limit: '관리 기준값 이탈',
-    repeat: '같은 측정값이 연속 반복됨 — 확인 필요(부정행위로 판정하지 않음)'
+    repeat: '같은 측정값이 연속 반복됨 — 확인 필요(부정행위로 판정하지 않음)',
+    same_photo: '이전에 올린 것과 같은 사진 파일 — 확인 필요'
   };
 
   // 규칙 검사. limits: [{item, lower, upper}], opts: { repeat_days: 숫자 또는 빈값(검사 안 함) }
@@ -454,6 +693,17 @@
         else if (L.lower != null && v < L.lower) add(r, 'out_of_limit', v + ' < 하한 ' + L.lower);
       }
     });
+    // 같은 사진 파일이 다른 날·다른 설비 점검에 다시 쓰였는지(파일 지문 photo_hash 기준)
+    var firstUse = {};
+    (records || []).forEach(function (r) {
+      if (!r.photo_hash) return;
+      var key = toDateStr(r.date) + '|' + normKey(r.vendor) + '|' + normKey(r.equip);
+      var f = firstUse[r.photo_hash];
+      if (!f) { firstUse[r.photo_hash] = { key: key, r: r, flagged: {} }; return; }
+      if (f.key === key || f.flagged[key]) return;
+      f.flagged[key] = true;
+      add(r, 'same_photo', '처음 쓰인 곳: ' + toDateStr(f.r.date) + ' ' + f.r.vendor + ' ' + f.r.equip);
+    });
     var n = parseNum(opts.repeat_days);
     if (n != null && n >= 2) {
       var groups = {};
@@ -477,7 +727,7 @@
   // ── 백업(엑셀 시트) ─────────────────────────────────────────
   var INSP_FIELDS = ['id', 'part_no', 'rev', 'lot', 'insp_date', 'vendor', 'inspector', 'drawing_name'];
   var SPEC_COLS = ['no', 'name', 'type', 'nominal', 'tol_upper', 'tol_lower', 'unit', 'decimals'];
-  var MEAS_COLS = ['no', 'name', 'value', 'unit', 'source'];
+  var MEAS_COLS = ['no', 'name', 'value', 'unit', 'source', 'nominal', 'tol_upper', 'tol_lower', 'orig_no', 'matched', 'photo'];
 
   function dbToSheets(db) {
     var insp = [INSP_FIELDS.slice()], spec = [['insp_id'].concat(SPEC_COLS)], meas = [['insp_id'].concat(MEAS_COLS)], pins = [['insp_id', 'no', 'x', 'y']];
@@ -491,7 +741,7 @@
     return {
       '검사건': insp, '치수기준표': spec, '측정결과': meas, '핀좌표': pins,
       '설비목록': [['vendor', 'equip', 'order']].concat((d.equipment || []).map(function (e) { return [e.vendor, e.equip, e.order]; })),
-      '일일점검': [['vendor', 'date', 'equip', 'item', 'result', 'value', 'photo']].concat((d.records || []).map(function (r) { return [r.vendor, r.date, r.equip, r.item, r.result, r.value, r.photo]; })),
+      '일일점검': [['vendor', 'date', 'equip', 'item', 'result', 'value', 'photo', 'photo_hash']].concat((d.records || []).map(function (r) { return [r.vendor, r.date, r.equip, r.item, r.result, r.value, r.photo, r.photo_hash || '']; })),
       '점검기준값': [['item', 'lower', 'upper']].concat((d.limits || []).map(function (l) { return [l.item, l.lower, l.upper]; }))
     };
   }
@@ -512,7 +762,7 @@
       map[it.id] = it; db.inspections.push(it);
     });
     sheetObjs(sheets['치수기준표']).forEach(function (o) { var it = map[String(o.insp_id)]; if (it) { var s = {}; SPEC_COLS.forEach(function (k) { s[k] = o[k]; }); s.no = String(s.no); it.spec.push(s); } });
-    sheetObjs(sheets['측정결과']).forEach(function (o) { var it = map[String(o.insp_id)]; if (it) { var m = {}; MEAS_COLS.forEach(function (k) { m[k] = o[k]; }); m.no = String(m.no); it.meas.push(m); } });
+    sheetObjs(sheets['측정결과']).forEach(function (o) { var it = map[String(o.insp_id)]; if (it) { var m = {}; MEAS_COLS.forEach(function (k) { if (o[k] !== undefined && (o[k] !== '' || MEAS_COLS.indexOf(k) < 5)) m[k] = o[k]; }); m.no = String(m.no == null ? '' : m.no); it.meas.push(m); } });
     sheetObjs(sheets['핀좌표']).forEach(function (o) { var it = map[String(o.insp_id)]; if (it) it.pins[String(o.no)] = { x: Number(o.x), y: Number(o.y) }; });
     db.daily.equipment = sheetObjs(sheets['설비목록']);
     db.daily.records = sheetObjs(sheets['일일점검']).map(function (r) { r.date = toDateStr(r.date); return r; });
@@ -524,7 +774,8 @@
   function emptyDb() {
     return {
       inspections: [], current: null,
-      settings: { match_by_name: true, round_before_judge: false, blank_unit_as_spec: true },
+      // offline_mode: 폐쇄망 모드(기본 켬) — 켜져 있으면 「AI 읽기」를 숨기고 어떤 요청도 밖으로 보내지 않습니다
+      settings: { match_by_name: true, round_before_judge: false, blank_unit_as_spec: true, offline_mode: true, ai_model: 'gpt-4o-mini' },
       templates: [],
       daily: { equipment: [], records: [], limits: [], repeat_days: '' }
     };
@@ -547,6 +798,9 @@
     detectDelimiter: detectDelimiter, parseDelimited: parseDelimited, guessMapping: guessMapping, guessHeaderRow: guessHeaderRow, applyMapping: applyMapping,
     missingRequired: missingRequired, normalizeSpecRow: normalizeSpecRow, reportRows: reportRows, toCsv: toCsv,
     toDateStr: toDateStr, dailyBoard: dailyBoard, dailyChecks: dailyChecks,
+    indexSpec: indexSpec, matchIndex: matchIndex, normalizeMeasRow: normalizeMeasRow, suggestMatches: suggestMatches, applyMatches: applyMatches,
+    matchWhyText: matchWhyText, MATCH_LEVEL: MATCH_LEVEL, nextSpecNo: nextSpecNo, specFromMeas: specFromMeas, textToRows: textToRows,
+    aiPromptMeasure: aiPromptMeasure, aiPromptDaily: aiPromptDaily, parseAiJson: parseAiJson, hashBytes: hashBytes,
     dbToSheets: dbToSheets, sheetsToDb: sheetsToDb, emptyDb: emptyDb, newInspection: newInspection
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

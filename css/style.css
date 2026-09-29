@@ -159,13 +159,13 @@ table.edit td.wide input { min-width: 10em; }
 .drawing-box svg.overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
 .drawing-box.placing { cursor: crosshair; outline: 3px solid var(--primary); }
 .pin { cursor: pointer; }
-.pin circle { stroke: #fff; stroke-width: 3; }
-.pin.OK circle { fill: var(--ok); }
-.pin.NOK circle { fill: var(--nok); }
-.pin.CHECK circle { fill: var(--check); }
+.pin circle, .pin ellipse { stroke: #fff; stroke-width: 3; }
+.pin.OK circle, .pin.OK ellipse { fill: var(--ok); }
+.pin.NOK circle, .pin.NOK ellipse { fill: var(--nok); }
+.pin.CHECK circle, .pin.CHECK ellipse { fill: var(--check); }
 .pin text { font: 700 15px sans-serif; fill: #fff; text-anchor: middle; pointer-events: none; }
 .pin.CHECK text { fill: var(--check-ink); }
-.pin.sel circle { stroke: #1b2430; stroke-width: 4; }
+.pin.sel circle, .pin.sel ellipse { stroke: #1b2430; stroke-width: 4; }
 .side-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow: auto; }
 .side-list button { width: 100%; text-align: left; display: flex; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; cursor: pointer; }
 .side-list button[aria-pressed="true"] { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary) inset; }
@@ -192,3 +192,31 @@ table.edit td.wide input { min-width: 10em; }
 .toast.error { background: var(--danger); }
 .board-ok { color: var(--ok); font-weight: 700; }
 .board-miss { color: var(--nok); font-weight: 700; }
+
+/* 2026-09-29 — 폐쇄망 표시 · 사진 옮겨 적기 · 짝 제안 */
+.net-badge { background: #e6f4ea; border-bottom: 1px solid #b7dcc2; color: #144d27; font-size: .9rem; padding: 6px var(--container-pad); text-align: center; }
+.net-badge.ai-on { background: #fff4d6; border-bottom-color: #e8cf85; color: #5a4400; }
+.site-footer a { color: inherit; }
+.steps { margin: 0 0 12px; padding-left: 1.4em; }
+.steps li { margin: 4px 0; }
+.photo-entry { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 14px; }
+@media (max-width: 960px) { .photo-entry { grid-template-columns: minmax(0, 1fr); } }
+.photo-viewer { position: sticky; top: 96px; min-width: 0; }
+@media (max-width: 960px) { .photo-viewer { position: static; } }
+.photo-tools { margin-bottom: 8px; }
+.photo-scroll { overflow: auto; max-height: 70vh; border: 1px solid var(--line); border-radius: var(--radius); background: #222; touch-action: pan-x pan-y pinch-zoom; }
+@media (max-width: 960px) { .photo-scroll { max-height: 55vh; } }
+.photo-scroll img { display: block; max-width: none; height: auto; }
+.zoom-label { min-width: 3.5em; text-align: center; }
+.entry-table { max-height: 70vh; overflow: auto; }
+table.edit input.ai-filled { background: #eaf1fa; border-color: var(--primary); }
+table.edit input.ai-unsure { background: var(--check-bg); border-color: var(--check); }
+.ai-tools { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.lv { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: .86rem; }
+.lv-high { background: var(--ok-bg); color: var(--ok); }
+.lv-mid { background: var(--check-bg); color: var(--check-ink); }
+.lv-low { background: #eef1f5; color: var(--muted); }
+table.list td .sub { display: block; color: var(--muted); font-size: .82rem; white-space: normal; }
+.quick-edit { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 16px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: #f8fafc; }
+.quick-edit h3 { margin: 0; }
+.quick-edit .field input { min-height: 38px; }

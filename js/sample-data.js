@@ -37,6 +37,18 @@
     ['10', 'SLOT_DEPTH', 3, 3.06, 0.06, 'mm'],
     ['13', 'EXTRA_POINT', 2.5, 2.5, 0, 'mm']
   ];
+  // 가상 CMM 출력 — 측정번호 없이 기준값·공차만 있는 형태(도면 풍선 번호가 없을 때의 짝 제안 시연용, 2026-09-29)
+  var CMM_NONUM = [
+    ['예시 데이터 - 측정번호 없는 가상 CMM 출력 (실제 장비 파일 아님)'],
+    ['Feature', 'Nominal', '+Tol', '-Tol', 'Actual', 'Unit'],
+    ['LENGTH', 100, 0.2, -0.2, 100.12, 'mm'],
+    ['WIDTH', 40, 0.1, -0.1, 40.13, 'mm'],
+    ['THICK', 5, 0.05, -0.05, 5.02, 'mm'],
+    ['HOLE_DIA', 8, 0.05, 0, 8.03, 'mm'],
+    ['HOLE_DIA', 8, 0.05, 0, 7.98, 'mm'],
+    ['HOLE_PITCH', 60, 0.1, -0.1, 60.04, 'mm'],
+    ['SLOT_DEPTH', 3, 0.1, 0, 3.06, 'mm']
+  ];
   // 가상 수기 측정 (종이 검사표를 사람이 옮겨 적은 값이라고 가정)
   var MANUAL = [
     ['9', '경사 각도', '30.2', 'deg'],
@@ -118,7 +130,7 @@
 
   function build() {
     var spec = SPEC.map(function (r) { return { no: r[0], name: r[1], type: r[2], nominal: r[3], tol_upper: r[4], tol_lower: r[5], unit: r[6], decimals: r[7] }; });
-    var meas = CMM_ROWS.slice(3).map(function (r) { return { no: String(r[0]), name: r[1], value: r[3], unit: r[5], source: 'CMM' }; })
+    var meas = CMM_ROWS.slice(3).map(function (r) { return { no: String(r[0]), name: r[1], value: r[3], unit: r[5], source: 'CMM', nominal: r[2] }; })
       .concat(MANUAL.map(function (r) { return { no: r[0], name: r[1], value: r[2], unit: r[3], source: '수기' }; }));
     var pins = {};
     Object.keys(PINS).forEach(function (k) { pins[k] = { x: PINS[k][0] / W, y: PINS[k][1] / H }; });
@@ -130,8 +142,8 @@
     return {
       _sample: true,
       inspections: [insp], current: insp.id,
-      settings: { match_by_name: true, round_before_judge: false, blank_unit_as_spec: true },
-      templates: [{ name: '예시 CMM 출력(가상)', kind: 'meas', cols: { no: 'Point', name: 'Feature', value: 'Actual', unit: 'Unit' } }],
+      settings: { match_by_name: true, round_before_judge: false, blank_unit_as_spec: true, offline_mode: true, ai_model: 'gpt-4o-mini' },
+      templates: [{ name: '예시 CMM 출력(가상)', kind: 'meas', cols: { no: 'Point', name: 'Feature', value: 'Actual', unit: 'Unit', nominal: 'Nominal' } }],
       daily: {
         equipment: EQUIP.map(function (e) { return { vendor: e[0], equip: e[1], order: e[2] }; }),
         records: dailyRecords(),
@@ -141,7 +153,7 @@
     };
   }
 
-  var api = { build: build, drawingSvg: drawingSvg, SPEC: SPEC, CMM_ROWS: CMM_ROWS, MANUAL: MANUAL, EQUIP: EQUIP, LIMITS: LIMITS, dailyRecords: dailyRecords };
+  var api = { build: build, drawingSvg: drawingSvg, SPEC: SPEC, CMM_ROWS: CMM_ROWS, CMM_NONUM: CMM_NONUM, MANUAL: MANUAL, EQUIP: EQUIP, LIMITS: LIMITS, dailyRecords: dailyRecords };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.QCSample = api;
 })(typeof window !== 'undefined' ? window : this);

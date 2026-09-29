@@ -47,6 +47,9 @@
     getImage: function (id) { return get(KEY_IMG + id); },
     setImage: function (id, dataUrl) { return set(KEY_IMG + id, dataUrl); },
     delImage: function (id) { del(KEY_IMG + id); },
+    // OpenAI API 키 — 이 브라우저에만 둡니다. 엑셀 백업(dbToSheets)에는 들어가지 않습니다.
+    getKey: function () { return get('data09-08.openai_key') || ''; },
+    setKey: function (v) { if (v) set('data09-08.openai_key', v); else del('data09-08.openai_key'); },
     clearAll: clearAll,
     available: function () { get(KEY_DB); return ok; }
   };

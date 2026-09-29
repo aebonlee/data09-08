@@ -102,6 +102,13 @@ begin
     (v_i, 3, '2', '',     '약 7', '',     '',    '');
   insert into public.measurement (inspection_id, line_no, no, value, unit, source) values
     (v_i, 1, '1', '10.05', 'mm', 'CMM'), (v_i, 2, '1', '10.2', 'mm', '수기'), (v_i, 3, '2', '', '', '수기');
+  -- 2026-09-29: 번호 없는 CMM 측정(기준값·공차만 있음)도 받는다
+  insert into public.measurement (inspection_id, line_no, no, value, unit, source, nominal, tol_upper, tol_lower) values
+    (v_i, 4, '', '8.03', 'mm', 'CMM', '8', '0.05', '0');
+  perform public._assert_eq((select count(*) from public.measurement where no = '' and nominal = '8'), 1::bigint,
+    '번호 없는 측정 줄이 들어간다');
+  perform public._assert_raises(format('insert into public.measurement (inspection_id, line_no, value, matched) values (%s, 5, %L, %L)', v_i, '1', 'guess'),
+    '23514', 'matched 는 정해진 값만');
   insert into public.drawing_pin (inspection_id, no, x, y) values (v_i, '1', 0.25, 0.4);
 
   insert into public.equipment (vendor, equip, "order") values ('A사', '1호기', 1), ('A사', '2호기', 2);
