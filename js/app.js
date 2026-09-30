@@ -1601,6 +1601,7 @@
     if (!VIEWS[route]) route = '#/cases';
     if (route !== '#/drawing') { ui.placing = false; ui.balloon = false; ui.drawPins = null; }
     renderNav(route);
+    if (window.QCCover) window.QCCover.setVisible(route === '#/cases');   // 표지는 첫 화면(검사 건)에서만
     main.textContent = '';
     VIEWS[route]();
     main.setAttribute('data-route', location.hash || '#/cases');

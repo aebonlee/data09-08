@@ -268,3 +268,99 @@ table.lab-matrix th[scope="row"] { background: #eef1f5; }
 
 /* AI 주소 확인 문구 (2026-09-29 오후 늦게) */
 .note.error-text { color: var(--danger); }
+
+/* ── 표지(2026-09-30 수강생 요청: 3차원 측정기 + 엑셀 판정표 + AI → 검사 시간 단축) ──
+   기존 규칙은 그대로 두고 여기서 덧붙입니다. 색은 아래 토큰만 씁니다(글자 대비는 개발일지에 계산값). */
+:root {
+  --cv-bg: #e9eff6;          /* 표지 바탕 */
+  --cv-ink: #14202e;         /* 제목·본문 */
+  --cv-muted: #3d4957;       /* 보조 글 */
+  --cv-eyebrow: #174a84;     /* 머리 한 줄 */
+  --cv-line: #c8d3df;
+  --cv-panel: #ffffff;       /* 그림 판 */
+  --cv-grid: #eef2f6;
+  --cv-steel: #c9d2dc;
+  --cv-steel-edge: #7d8a99;
+  --cv-granite: #4a5462;
+  --cv-stand: #333b46;
+  --cv-part: #a9b8c8;
+  --cv-brand: #1f5fa8;
+  --cv-ai: #0f2a47;
+  --cv-ai-glow: #d9a31a;
+  --cv-sheet: #1b7a3d;       /* 판정표 초록 */
+  --cv-sheet-head: #e6f4ea;
+  --cv-sheet-ink: #144d27;
+  --cv-sheet-line: #b7dcc2;
+  --cv-manual: #8a96a3;
+}
+.cover { background: var(--cv-bg); border-bottom: 1px solid var(--cv-line); color: var(--cv-ink); }
+.cover-inner { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; padding-top: 24px; padding-bottom: 24px; align-items: center; }
+@media (min-width: 900px) { .cover-inner { grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 36px; padding-top: 36px; padding-bottom: 36px; } }
+.cover-text { min-width: 0; }
+.cover-eyebrow { margin: 0 0 6px; color: var(--cv-eyebrow); font-weight: 700; font-size: .9rem; }
+.cover-title { margin: 0 0 10px; font-size: clamp(1.35rem, 1.05rem + 1.5vw, 2.05rem); line-height: 1.3; color: var(--cv-ink); letter-spacing: -.01em; }
+.cover-br { display: none; }
+@media (min-width: 900px) { .cover-br { display: inline; } }
+.cover-lead { margin: 0 0 16px; color: var(--cv-muted); font-size: 1rem; max-width: 36em; }
+.cover-actions { margin-bottom: 18px; }
+.cover-actions .btn:not(.btn-primary) { background: var(--cv-panel); }
+.cover-time { background: var(--cv-panel); border: 1px solid var(--cv-line); border-radius: var(--radius); padding: 12px 14px; max-width: 34em; }
+.ct-head { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-weight: 700; font-size: .93rem; }
+.ct-clock { flex: none; fill: none; stroke: var(--cv-ink); stroke-width: 2; stroke-linecap: round; }
+#ctHand { transform-origin: 12px 12px; }
+.ct-row { display: grid; grid-template-columns: minmax(0, 11em) minmax(0, 1fr); gap: 10px; align-items: center; margin: 6px 0; font-size: .9rem; }
+@media (max-width: 420px) { .ct-row { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+.ct-label { min-width: 0; }
+.ct-track { display: block; height: 12px; border-radius: 6px; background: var(--cv-grid); overflow: hidden; }
+.ct-bar { display: block; height: 100%; width: 100%; border-radius: 6px; transform-origin: left center; }
+.ct-manual { background: var(--cv-manual); }
+.ct-auto { background: var(--cv-sheet); transform: scaleX(1); transition: transform 1.6s cubic-bezier(.3, .7, .2, 1); }
+.cover-time.is-done .ct-auto { transform: scaleX(.26); }
+.cover-time.is-done #ctHand { transform: rotate(-270deg); transition: transform 1.6s cubic-bezier(.3, .7, .2, 1); }
+.ct-note { margin: 8px 0 0; font-size: .82rem; color: var(--cv-muted); }
+.cover-figure { margin: 0; min-width: 0; }
+.cover-art { display: block; width: 100%; height: auto; }
+.cover-flow { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 8px; margin-top: 8px; font-size: .88rem; font-weight: 600; color: var(--cv-ink); text-align: center; }
+.cover-flow .cf-arrow { color: var(--cv-muted); font-weight: 400; }
+/* 그림 안 요소 */
+.cv-panel { fill: var(--cv-panel); stroke: var(--cv-line); }
+.cv-gridlines path { stroke: var(--cv-grid); stroke-width: 1; fill: none; }
+.cv-stand { fill: var(--cv-stand); }
+.cv-granite { fill: var(--cv-granite); }
+.cv-speck { fill: #6d7786; }
+.cv-part { fill: var(--cv-part); stroke: #56616f; stroke-width: 1.5; }
+.cv-part-top { fill: #bccad8; }
+.cv-pt { fill: #56616f; }
+.cv-pulse { fill: none; stroke: var(--cv-brand); stroke-width: 2.5; }
+.cv-upright { fill: var(--cv-steel); stroke: var(--cv-steel-edge); stroke-width: 1.5; }
+.cv-beam { fill: #dfe5ec; stroke: var(--cv-steel-edge); stroke-width: 1.5; }
+.cv-ram { fill: #aab6c3; stroke: var(--cv-steel-edge); stroke-width: 1.2; }
+.cv-head { fill: var(--cv-ink); }
+.cv-stylus { stroke: #56616f; stroke-width: 3; stroke-linecap: round; }
+.cv-ruby { fill: #c62828; }
+.cv-carriage { fill: var(--cv-brand); }
+.cv-carriage-lamp { fill: #cfe0f4; }
+.cv-link { fill: none; stroke: var(--cv-brand); stroke-width: 2.5; stroke-dasharray: 6 6; opacity: .55; }
+.cv-halo { fill: none; stroke: var(--cv-ai-glow); stroke-width: 2; stroke-dasharray: 4 7; opacity: .8; }
+.cv-pins { stroke: var(--cv-ai); stroke-width: 3; stroke-linecap: round; }
+.cv-chip { fill: var(--cv-ai); }
+.cv-chip-text { fill: #ffffff; font: 800 22px/1 system-ui, sans-serif; text-anchor: middle; }
+.cv-sheet-body { fill: #ffffff; stroke: var(--cv-sheet); stroke-width: 2; }
+.cv-sheet-bar { fill: var(--cv-sheet); }
+.cv-sheet-glyph { fill: none; stroke: #ffffff; stroke-width: 1.6; }
+.cv-sheet-title { fill: #ffffff; font: 700 14px system-ui, sans-serif; }
+.cv-sheet-head { fill: var(--cv-sheet-head); }
+.cv-sheet-lines { stroke: var(--cv-sheet-line); stroke-width: 1; fill: none; }
+.cv-th { fill: var(--cv-sheet-ink); font: 700 13px system-ui, sans-serif; text-anchor: middle; }
+.cv-td { fill: var(--cv-ink); font: 600 14px system-ui, sans-serif; text-anchor: middle; }
+.cv-val { fill: var(--cv-ink); font: 700 15px ui-monospace, Menlo, Consolas, monospace; text-anchor: middle; }
+.cv-judge text { fill: #ffffff; font: 800 12px system-ui, sans-serif; text-anchor: middle; }
+.cv-judge.cv-ok rect { fill: var(--ok); }
+.cv-judge.cv-nok rect { fill: var(--nok); }
+.cv-token rect { fill: #ffffff; stroke: var(--cv-brand); stroke-width: 2; }
+.cv-token text { fill: var(--cv-ai); font: 700 13px ui-monospace, Menlo, Consolas, monospace; text-anchor: middle; }
+@media (prefers-reduced-motion: reduce) {
+  .ct-auto, .cover-time.is-done #ctHand { transition: none; }
+}
+.cover-flow .cf-step { white-space: nowrap; }
+@media (max-width: 899px) { .cover-figure { order: -1; } }
